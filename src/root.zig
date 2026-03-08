@@ -23,6 +23,9 @@
 //! const e_identity = bls.pairing.pair(bls.G1.identityElement, g2);
 //! std.debug.assert(e_identity.isOne());
 //! ```
+//!
+//! BLS12-381 point encodings follow the format given by the IETF
+//! specification, so they interoperate with any library that implements it.
 
 pub const bls12_381 = @import("bls12_381.zig");
 

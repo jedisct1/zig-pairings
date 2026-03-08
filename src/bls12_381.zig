@@ -15,6 +15,15 @@
 //! - Fp6 = Fp2[v] / (v³ - (1+u))
 //! - Fp12 = Fp6[w] / (w² - v)
 //!
+//! Conformance:
+//! - Compressed and uncompressed G1/G2 encodings follow the IETF specification
+//! - The pairing of the generators matches the IETF test vector
+//! - The bilinearity properties are covered by tests:
+//!   - e(2P, Q) = e(P, Q)^2
+//!   - e(P, 2Q) = e(P, Q)^2
+//!   - e(-P, Q) * e(P, Q) = 1
+//!   - e(P, -Q) * e(P, Q) = 1
+//!
 //! References:
 //! - https://hackmd.io/@benjaminion/bls12-381
 //! - https://eips.ethereum.org/EIPS/eip-2537
@@ -38,4 +47,5 @@ test {
     _ = G2;
     _ = scalar;
     _ = pairing;
+    _ = @import("bls12_381/ietf_test.zig");
 }
