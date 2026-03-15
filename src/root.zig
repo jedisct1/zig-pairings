@@ -40,4 +40,5 @@ pub const pairing = bls12_381.pairing;
 
 test {
     _ = bls12_381;
+    _ = @import("interop_test.zig");
 }
