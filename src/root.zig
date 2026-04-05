@@ -1,7 +1,12 @@
 //! Pairing-friendly elliptic curve library for Zig.
 //!
-//! This library implements the BLS12-381 curve, intended for cryptographic
-//! applications including BLS signatures and zero-knowledge proofs.
+//! This library implements the BLS12-381 and BN462 curves, intended for
+//! cryptographic applications including BLS signatures and zero-knowledge
+//! proofs.
+//!
+//! The top-level aliases below default to BLS12-381.
+//!
+//! BN462 lives under the `bn462` namespace.
 //!
 //! Features:
 //! - Field arithmetic: Fp, Fp2, Fp6, Fp12 with Montgomery multiplication
@@ -28,7 +33,9 @@
 //! specification, so they interoperate with any library that implements it.
 
 pub const bls12_381 = @import("bls12_381.zig");
+pub const bn462 = @import("bn462.zig");
 
+// Top-level aliases default to the BLS12-381 curve.
 pub const Fp = bls12_381.Fp;
 pub const Fp2 = bls12_381.Fp2;
 pub const Fp6 = bls12_381.Fp6;
@@ -40,5 +47,6 @@ pub const pairing = bls12_381.pairing;
 
 test {
     _ = bls12_381;
+    _ = bn462;
     _ = @import("interop_test.zig");
 }
