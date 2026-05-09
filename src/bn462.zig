@@ -15,10 +15,12 @@ pub const Fp = @import("bn462/fp.zig").Fp;
 pub const Fp2 = @import("bn462/fp2.zig").Fp2;
 pub const Fp6 = @import("bn462/fp6.zig").Fp6;
 pub const Fp12 = @import("bn462/fp12.zig").Fp12;
+pub const scalar = @import("bn462/scalar.zig");
 
 test {
     _ = Fp;
     _ = Fp2;
     _ = Fp6;
     _ = Fp12;
+    _ = scalar;
 }
