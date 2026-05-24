@@ -31,6 +31,12 @@
 //!
 //! BLS12-381 point encodings follow the format given by the IETF
 //! specification, so they interoperate with any library that implements it.
+//!
+//! That format does not carry over to BN462, whose larger characteristic
+//! leaves too few spare bits for the metadata, and the specification
+//! deliberately leaves BN462 point encoding undefined.
+//!
+//! The BN462 encoding used here is therefore specific to this library.
 
 pub const bls12_381 = @import("bls12_381.zig");
 pub const bn462 = @import("bn462.zig");
