@@ -5,6 +5,7 @@
 //!
 //! It provides:
 //! - G1: A prime order subgroup of E(Fp) where y² = x³ + 5
+//! - G2: A prime order subgroup of E'(Fp²) where y² = x³ + (2 - u)
 //!
 //! Field tower construction:
 //! - Fp: Base field (462-bit prime)
@@ -28,6 +29,7 @@ pub const Fp2 = @import("bn462/fp2.zig").Fp2;
 pub const Fp6 = @import("bn462/fp6.zig").Fp6;
 pub const Fp12 = @import("bn462/fp12.zig").Fp12;
 pub const G1 = @import("bn462/g1.zig").G1;
+pub const G2 = @import("bn462/g2.zig").G2;
 pub const scalar = @import("bn462/scalar.zig");
 
 test {
@@ -36,5 +38,6 @@ test {
     _ = Fp6;
     _ = Fp12;
     _ = G1;
+    _ = G2;
     _ = scalar;
 }
