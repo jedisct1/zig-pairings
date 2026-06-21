@@ -6,7 +6,8 @@
 //!
 //! The top-level aliases below default to BLS12-381.
 //!
-//! BN462 lives under the `bn462` namespace.
+//! BN462 lives under the `bn462` namespace and mirrors the same field, group,
+//! and pairing structure.
 //!
 //! Features:
 //! - Field arithmetic: Fp, Fp2, Fp6, Fp12 with Montgomery multiplication

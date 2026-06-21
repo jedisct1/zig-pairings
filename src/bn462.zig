@@ -6,6 +6,8 @@
 //! It provides:
 //! - G1: A prime order subgroup of E(Fp) where y² = x³ + 5
 //! - G2: A prime order subgroup of E'(Fp²) where y² = x³ + (2 - u)
+//! - GT: The target group, a subgroup of Fp12*
+//! - Optimal Ate pairing: e: G1 × G2 → GT
 //!
 //! Field tower construction:
 //! - Fp: Base field (462-bit prime)
@@ -23,6 +25,10 @@
 //! this library.
 //!
 //! Field element and scalar encodings do follow the specification.
+//!
+//! References:
+//! - https://datatracker.ietf.org/doc/draft-irtf-cfrg-pairing-friendly-curves/
+//! - Barreto, P.S.L.M. and Naehrig, M. "Pairing-Friendly Elliptic Curves of Prime Order"
 
 pub const Fp = @import("bn462/fp.zig").Fp;
 pub const Fp2 = @import("bn462/fp2.zig").Fp2;
@@ -31,6 +37,7 @@ pub const Fp12 = @import("bn462/fp12.zig").Fp12;
 pub const G1 = @import("bn462/g1.zig").G1;
 pub const G2 = @import("bn462/g2.zig").G2;
 pub const scalar = @import("bn462/scalar.zig");
+pub const pairing = @import("bn462/pairing.zig");
 
 test {
     _ = Fp;
@@ -40,4 +47,5 @@ test {
     _ = G1;
     _ = G2;
     _ = scalar;
+    _ = pairing;
 }
