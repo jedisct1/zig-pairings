@@ -56,4 +56,5 @@ test {
     _ = bls12_381;
     _ = bn462;
     _ = @import("interop_test.zig");
+    _ = @import("bn462_interop_test.zig");
 }
