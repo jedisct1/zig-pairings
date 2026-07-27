@@ -18,7 +18,7 @@
 //!
 //! Example:
 //! ```zig
-//! const bls = @import("pairing").bls12_381;
+//! const bls = @import("pairings").bls12_381;
 //!
 //! // Compute pairing of generators
 //! const g1 = bls.G1.basePoint;

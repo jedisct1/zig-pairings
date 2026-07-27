@@ -1,4 +1,4 @@
-# zig-pairing
+# zig-pairings
 
 A pairing-friendly elliptic curve library for Zig, implementing BLS12-381 and BN462 at the 128-bit security level.
 
@@ -25,7 +25,7 @@ A Barreto-Naehrig curve at the 128-bit security level.
 Add the package to your `build.zig.zon` dependencies, then:
 
 ```zig
-const bls = @import("pairing").bls12_381;
+const bls = @import("pairings").bls12_381;
 
 const g1 = bls.G1.basePoint;
 const g2 = bls.G2.basePoint;

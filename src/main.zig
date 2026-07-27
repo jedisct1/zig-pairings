@@ -1,5 +1,5 @@
 const std = @import("std");
-const pairing_lib = @import("pairing");
+const pairing_lib = @import("pairings");
 const bls12_381 = pairing_lib.bls12_381;
 const pair = bls12_381.pairing.pair;
 const G1 = bls12_381.G1;
