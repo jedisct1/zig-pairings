@@ -1,4 +1,4 @@
-# zig-pairings
+# Pairings for Zig
 
 A pairing-friendly elliptic curve library for Zig, implementing BLS12-381 and BN462 at the 128-bit security level.
 
