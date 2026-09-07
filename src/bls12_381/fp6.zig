@@ -199,18 +199,18 @@ pub const Fp6 = struct {
             },
             3 => .{
                 .c0 = c0,
-                .c1 = c1.neg(),
-                .c2 = c2,
+                .c1 = c1.mul(frobenius_coeffs_1[0].mul(frobenius_coeffs_2[0])),
+                .c2 = c2.mul(frobenius_coeffs_1[1].mul(frobenius_coeffs_2[1])),
             },
             4 => .{
                 .c0 = c0,
-                .c1 = c1.mul(frobenius_coeffs_1[0].conjugate()),
-                .c2 = c2.mul(frobenius_coeffs_1[1].conjugate()),
+                .c1 = c1.mul(frobenius_coeffs_2[0].sq()),
+                .c2 = c2.mul(frobenius_coeffs_2[1].sq()),
             },
             5 => .{
                 .c0 = c0,
-                .c1 = c1.mul(frobenius_coeffs_2[0].conjugate()),
-                .c2 = c2.mul(frobenius_coeffs_2[1].conjugate()),
+                .c1 = c1.mul(frobenius_coeffs_1[0].mul(frobenius_coeffs_2[0].sq())),
+                .c2 = c2.mul(frobenius_coeffs_1[1].mul(frobenius_coeffs_2[1].sq())),
             },
             else => unreachable,
         };

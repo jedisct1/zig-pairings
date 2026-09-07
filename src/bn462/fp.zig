@@ -79,7 +79,7 @@ pub const Fp = struct {
 
         var limbs: [limbs_count]u64 = undefined;
 
-        limbs[7] = @as(u64, s[0]) << 8 | @as(u64, s[1]);
+        limbs[7] = @as(u64, s[0]) << 8 | s[1];
 
         inline for (0..7) |i| {
             const j = 6 - i;
@@ -213,15 +213,13 @@ pub const Fp = struct {
             borrow = diff1[1] | diff2[1];
         }
 
-        // A borrow means the result went negative, so bring it back with a modulus add.
-        if (borrow == 1) {
-            var c: u1 = 0;
-            inline for (0..limbs_count) |i| {
-                const sum1 = @addWithOverflow(result[i], modulus[i]);
-                const sum2 = @addWithOverflow(sum1[0], c);
-                result[i] = sum2[0];
-                c = sum1[1] | sum2[1];
-            }
+        const mask = 0 -% @as(u64, borrow);
+        var carry: u1 = 0;
+        inline for (0..limbs_count) |i| {
+            const sum1 = @addWithOverflow(result[i], modulus[i] & mask);
+            const sum2 = @addWithOverflow(sum1[0], carry);
+            result[i] = sum2[0];
+            carry = sum1[1] | sum2[1];
         }
 
         return .{ .limbs = result };
@@ -239,7 +237,7 @@ pub const Fp = struct {
         inline for (0..limbs_count) |i| {
             var carry: u64 = 0;
             inline for (0..limbs_count) |j| {
-                const product = @as(u128, a.limbs[i]) * @as(u128, b.limbs[j]) + @as(u128, t[i + j]) + @as(u128, carry);
+                const product = @as(u128, a.limbs[i]) * b.limbs[j] + t[i + j] + carry;
                 t[i + j] = @truncate(product);
                 carry = @truncate(product >> 64);
             }
@@ -265,13 +263,12 @@ pub const Fp = struct {
             var carry: u64 = 0;
 
             inline for (0..limbs_count) |j| {
-                const product = @as(u128, k) * @as(u128, modulus[j]) + @as(u128, wide[i + j]) + @as(u128, carry);
+                const product = @as(u128, k) * modulus[j] + wide[i + j] + carry;
                 wide[i + j] = @truncate(product);
                 carry = @truncate(product >> 64);
             }
 
-            var idx = i + limbs_count;
-            while (carry != 0 and idx < limbs_count * 2) : (idx += 1) {
+            inline for (i + limbs_count..limbs_count * 2) |idx| {
                 const sum = @addWithOverflow(wide[idx], carry);
                 wide[idx] = sum[0];
                 carry = sum[1];
@@ -387,7 +384,7 @@ pub const Fp = struct {
         }
         const limbs: [limbs_count]u64 = comptime blk: {
             var l: [limbs_count]u64 = undefined;
-            l[7] = @as(u64, bytes[0]) << 8 | @as(u64, bytes[1]);
+            l[7] = @as(u64, bytes[0]) << 8 | bytes[1];
             for (0..7) |i| {
                 const j = 6 - i;
                 const offset = 2 + i * 8;
@@ -398,7 +395,7 @@ pub const Fp = struct {
                     @as(u64, bytes[offset + 4]) << 24 |
                     @as(u64, bytes[offset + 5]) << 16 |
                     @as(u64, bytes[offset + 6]) << 8 |
-                    @as(u64, bytes[offset + 7]);
+                    bytes[offset + 7];
             }
             break :blk l;
         };

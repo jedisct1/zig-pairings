@@ -8,6 +8,7 @@ const std = @import("std");
 const crypto = std.crypto;
 const Fp = @import("fp.zig").Fp;
 const scalar = @import("scalar.zig");
+const projective = @import("../projective.zig");
 
 const EncodingError = crypto.errors.EncodingError;
 const IdentityElementError = crypto.errors.IdentityElementError;
@@ -62,7 +63,7 @@ pub const G1 = struct {
     /// Uncompressed point encoding size.
     pub const uncompressed_length = 96;
 
-    /// Create a point from affine coordinates, checking it's on the curve.
+    /// Create a curve point without checking subgroup membership.
     pub fn fromAffineCoordinates(affine: AffineCoordinates) EncodingError!G1 {
         const x = affine.x;
         const y = affine.y;
@@ -91,6 +92,9 @@ pub const G1 = struct {
     /// - Bit 7: always 1, marking the compressed form
     /// - Bit 6: 1 if point at infinity
     /// - Bit 5: sign of y, 1 if y is the lexicographically largest root
+    ///
+    /// Allows identity and points outside the subgroup.
+    /// Use isInSubgroup() and rejectIdentity() as required by the protocol.
     pub fn fromCompressed(bytes: [compressed_length]u8) (EncodingError || NotSquareError || NonCanonicalError)!G1 {
         const flags = bytes[0] >> 5;
         const is_compressed = (flags & 0b100) != 0;
@@ -160,6 +164,9 @@ pub const G1 = struct {
     /// top bits of the first byte:
     /// - Bit 7: always 0, marking the uncompressed form
     /// - Bit 6: 1 if point at infinity
+    ///
+    /// Allows identity and points outside the subgroup.
+    /// Use isInSubgroup() and rejectIdentity() as required by the protocol.
     pub fn fromUncompressed(bytes: [uncompressed_length]u8) (EncodingError || NonCanonicalError)!G1 {
         const flags = bytes[0] >> 5;
         const is_compressed = (flags & 0b100) != 0;
@@ -229,10 +236,6 @@ pub const G1 = struct {
 
     /// Convert to affine coordinates.
     pub fn affineCoordinates(p: G1) AffineCoordinates {
-        if (p.isIdentity()) {
-            return AffineCoordinates.identityElement;
-        }
-
         const z_inv = p.z.invert();
         return .{
             .x = p.x.mul(z_inv),
@@ -267,48 +270,13 @@ pub const G1 = struct {
         };
     }
 
-    /// Double a point using the general addition formula.
     pub fn dbl(p: G1) G1 {
-        return addGeneral(p, p);
-    }
-
-    /// General point addition that also handles P + P (doubling).
-    fn addGeneral(p: G1, q: G1) G1 {
-        if (p.isIdentity()) return q;
-        if (q.isIdentity()) return p;
-
-        // Working in affine coordinates keeps the special cases easy to spot.
-        const a = p.affineCoordinates();
-        const b = q.affineCoordinates();
-
-        if (a.x.equivalent(b.x)) {
-            if (a.y.equivalent(b.y)) {
-                return dblAffine(a);
-            } else {
-                return identityElement;
-            }
-        }
-
-        const lambda = b.y.sub(a.y).mul(b.x.sub(a.x).invert());
-        const x3 = lambda.sq().sub(a.x).sub(b.x);
-        const y3 = lambda.mul(a.x.sub(x3)).sub(a.y);
-
-        return G1{ .x = x3, .y = y3, .z = Fp.one };
-    }
-
-    /// Affine doubling formula.
-    fn dblAffine(p: AffineCoordinates) G1 {
-        const xx = p.x.sq();
-        const lambda = xx.add(xx).add(xx).mul(p.y.dbl().invert());
-        const x3 = lambda.sq().sub(p.x.dbl());
-        const y3 = lambda.mul(p.x.sub(x3)).sub(p.y);
-
-        return G1{ .x = x3, .y = y3, .z = Fp.one };
+        return projective.dbl(G1, p);
     }
 
     /// Add two points.
     pub fn add(p: G1, q: G1) G1 {
-        return addGeneral(p, q);
+        return projective.add(G1, p, q);
     }
 
     /// Subtract two points.
@@ -318,41 +286,25 @@ pub const G1 = struct {
 
     /// Add a point in affine coordinates.
     pub fn addMixed(p: G1, q: AffineCoordinates) G1 {
-        return p.add(G1{ .x = q.x, .y = q.y, .z = Fp.one });
+        var other = G1{ .x = q.x, .y = q.y, .z = Fp.one };
+        const is_identity = @intFromBool(q.x.isZero()) & @intFromBool(q.y.isZero());
+        other.cMov(identityElement, is_identity);
+        return p.add(other);
     }
 
     /// Subtract a point in affine coordinates.
     pub fn subMixed(p: G1, q: AffineCoordinates) G1 {
-        return p.add(G1{ .x = q.x, .y = q.y.neg(), .z = Fp.one });
+        return p.addMixed(q.neg());
     }
 
-    /// Scalar multiplication.
+    /// Multiply by a secret scalar, rejecting an identity result.
     pub fn mul(p: G1, scalar_bytes: [32]u8, endian: std.builtin.Endian) IdentityElementError!G1 {
-        const s = if (endian == .little) scalar_bytes else blk: {
-            var swapped: [32]u8 = undefined;
-            for (scalar_bytes, 0..) |b, i| swapped[31 - i] = b;
-            break :blk swapped;
-        };
-
-        var result = identityElement;
-        var temp = p;
-
-        for (s) |byte| {
-            var b = byte;
-            for (0..8) |_| {
-                if (b & 1 == 1) {
-                    result = result.add(temp);
-                }
-                temp = temp.dbl();
-                b >>= 1;
-            }
-        }
+        const result = projective.mul(G1, p, &scalar_bytes, endian);
 
         try result.rejectIdentity();
         return result;
     }
 
-    /// Scalar multiplication with public scalar (variable time).
     pub fn mulPublic(p: G1, scalar_bytes: [32]u8, endian: std.builtin.Endian) IdentityElementError!G1 {
         return p.mul(scalar_bytes, endian);
     }
@@ -370,18 +322,18 @@ pub const G1 = struct {
         return p.mul(h_bytes, .little) catch identityElement;
     }
 
-    /// Check if the point is in the correct subgroup G1.
+    /// Validate subgroup membership, allowing the identity.
     pub fn isInSubgroup(p: G1) bool {
-        // A point is in G1 iff [r]P = O.
-        const r_bytes = scalar.modulus_bytes;
-        const result = p.mul(r_bytes, .big) catch return true;
-        return result.isIdentity();
+        if (!projective.isOnCurve(G1, p)) return false;
+        return projective.mul(G1, p, &scalar.modulus_bytes, .big).isIdentity();
     }
 
     /// Return a random point in G1.
     pub fn random(io: std.Io) G1 {
-        const s = scalar.random(io, .little);
-        return basePoint.mul(s, .little) catch unreachable;
+        while (true) {
+            const s = scalar.random(io, .big);
+            return basePoint.mul(s, .big) catch continue;
+        }
     }
 };
 

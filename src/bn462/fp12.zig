@@ -136,7 +136,7 @@ pub const Fp12 = struct {
         const c0 = a.c0.frobeniusMap(1);
         const c1 = a.c1.frobeniusMap(1);
 
-        const c1_scaled = c1.mulByFp2(frobenius_coeffs[0]);
+        const c1_scaled = c1.mulByFp2(frobenius_coeff);
 
         return .{ .c0 = c0, .c1 = c1_scaled };
     }
@@ -363,105 +363,28 @@ const final_exponent = [_]u64{
     0x000000000001d621,
 };
 
-// Frobenius coefficients: ξ^((p^i - 1) / 6) for i = 1..5, where ξ = 2 + u.
-const frobenius_coeffs: [5]Fp2 = .{
-    // (ξ)^((p - 1) / 6)
-    Fp2{
-        .c0 = Fp{ .limbs = .{
-            0xd35f2cb69c9d8246,
-            0xa04da1fb0bd3cb01,
-            0x3331c6d5c64d7efe,
-            0xe820e4fe1d6488b0,
-            0x1f669fc5671493db,
-            0x718de72bd0f05fd4,
-            0xdfcf136df0e9d4a1,
-            0x0000000000000c76,
-        } },
-        .c1 = Fp{ .limbs = .{
-            0x756e26ebd432c365,
-            0xe49b456fb258734b,
-            0xce855fcb93a0147e,
-            0xb80d68954ae00a13,
-            0xdf2c12f26f01df76,
-            0xcec22b0fac3e7e1e,
-            0xc6e1d159b7d66ecd,
-            0x0000000000001bbf,
-        } },
-    },
-    // (ξ)^((p^2 - 1) / 6)
-    Fp2{
-        .c0 = Fp{ .limbs = .{
-            0x2b95a08b81d97f1d,
-            0x04660ceb4ac81d93,
-            0xdd5d22ac9dde8e1b,
-            0x93d24e4572e860f7,
-            0xb4a1c98c72e9bd55,
-            0x4d0496159b54ee5d,
-            0xb6a4015aee6b2f8b,
-            0x0000000000001715,
-        } },
-        .c1 = Fp.zero,
-    },
-    // (ξ)^((p^3 - 1) / 6)
-    Fp2{
-        .c0 = Fp{ .limbs = .{
-            0xbaaaeb98cd9b8ec1,
-            0x96e6434a00e331c2,
-            0x908c58c3e7700558,
-            0x7bf6c3ee1039e30c,
-            0x69f41bf840e7d479,
-            0x5334802f0e2abf6e,
-            0xcde63b47a9c25055,
-            0x0000000000000482,
-        } },
-        .c1 = Fp{ .limbs = .{
-            0x5c90c01288d8326a,
-            0x1fd8df5af348bc53,
-            0x17031a3493f5ce13,
-            0x373e8d7a1515f83d,
-            0x6ff93d2680ca670d,
-            0x70778eaec31b29de,
-            0x6b9fae1a5173755e,
-            0x00000000000002d3,
-        } },
-    },
-    // (ξ)^((p^4 - 1) / 6)
-    Fp2{
-        .c0 = Fp{ .limbs = .{
-            0x212893374cbe40bd,
-            0xe46ad53842631db4,
-            0xe7eefa16e452c1fb,
-            0x62a4f9abe4294df0,
-            0x39cd700706c16fa0,
-            0x11b7295e1483951d,
-            0x896141dfafe19b53,
-            0x0000000000000377,
-        } },
-        .c1 = Fp.zero,
-    },
-    // (ξ)^((p^5 - 1) / 6)
-    Fp2{
-        .c0 = Fp{ .limbs = .{
-            0x0b4d6eea71118c8e,
-            0xed20978ef50f66c1,
-            0x5d5a91e5208982c9,
-            0xa6666e31bad76a5c,
-            0x0a577c32d9d34175,
-            0xe1a690024a311774,
-            0x6e4d28f9bb187bb3,
-            0x0000000000001c10,
-        } },
-        .c1 = Fp{ .limbs = .{
-            0x0b24492ef4b8ef18,
-            0x31c5902b40f04908,
-            0x487dba5fffbcb604,
-            0x91c1b4269237fe29,
-            0x50972a3411c8886e,
-            0xa1b55a9e23d36399,
-            0x24f3dde09bdd0690,
-            0x0000000000000b18,
-        } },
-    },
+// Frobenius correction for the tower basis.
+const frobenius_coeff = Fp2{
+    .c0 = Fp{ .limbs = .{
+        0xc0696fa7c6e23251,
+        0x9b58e25cf0f1df0d,
+        0xc14560073aab9c79,
+        0x224b6a68dfdbbac9,
+        0x7d997c2a5792eb25,
+        0x5c1a4d614a2d223b,
+        0xf1724aaf3af407ff,
+        0x00000000000020d3,
+    } },
+    .c1 = Fp{ .limbs = .{
+        0xc419bc0bf0aeeac1,
+        0x352ddf0031b8e848,
+        0x27838eb3a4c48e55,
+        0xaa3c3bf6ff656e5e,
+        0x5753783f47b9fd4d,
+        0x9d2e7092606b4575,
+        0x7ad74e2b650ad865,
+        0x0000000000000d59,
+    } },
 };
 
 test "fp12 basic arithmetic" {

@@ -32,7 +32,7 @@ pub const modulus_bytes: [encoded_length]u8 = .{
     0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x01,
 };
 
-/// Compressed scalar type.
+/// Arithmetic and fromBytes() use canonical big-endian values in [0, r - 1].
 pub const CompressedScalar = [encoded_length]u8;
 
 /// Check if bytes represent a canonical scalar (< r).
@@ -42,7 +42,7 @@ pub fn rejectNonCanonical(s: CompressedScalar) NonCanonicalError!void {
     }
 }
 
-/// Reduce a scalar modulo r if necessary.
+/// Reduce a big-endian integer modulo r.
 pub fn reduce(s: CompressedScalar) CompressedScalar {
     var limbs: [limbs_count]u64 = undefined;
     inline for (0..limbs_count) |i| {
@@ -50,23 +50,7 @@ pub fn reduce(s: CompressedScalar) CompressedScalar {
         limbs[i] = mem.readInt(u64, s[j * 8 ..][0..8], .big);
     }
 
-    var borrow: u1 = 0;
-    inline for (0..limbs_count) |i| {
-        const result = @subWithOverflow(limbs[i], modulus[i]);
-        const result2 = @subWithOverflow(result[0], borrow);
-        borrow = result[1] | result2[1];
-    }
-
-    // No borrow means the value is >= r, so subtract r once.
-    if (borrow == 0) {
-        borrow = 0;
-        inline for (0..limbs_count) |i| {
-            const result = @subWithOverflow(limbs[i], modulus[i]);
-            const result2 = @subWithOverflow(result[0], borrow);
-            limbs[i] = result2[0];
-            borrow = result[1] | result2[1];
-        }
-    }
+    limbs = @import("../scalar_reduce.zig").reduce(modulus, &limbs);
 
     var result: CompressedScalar = undefined;
     inline for (0..limbs_count) |i| {
@@ -76,7 +60,7 @@ pub fn reduce(s: CompressedScalar) CompressedScalar {
     return result;
 }
 
-/// Add two scalars modulo r.
+/// Add two canonical big-endian scalars modulo r.
 pub fn add(a: CompressedScalar, b: CompressedScalar) CompressedScalar {
     var a_limbs: [limbs_count]u64 = undefined;
     var b_limbs: [limbs_count]u64 = undefined;
@@ -121,7 +105,7 @@ pub fn add(a: CompressedScalar, b: CompressedScalar) CompressedScalar {
     return out;
 }
 
-/// Subtract two scalars modulo r.
+/// Subtract two canonical big-endian scalars modulo r.
 pub fn sub(a: CompressedScalar, b: CompressedScalar) CompressedScalar {
     var a_limbs: [limbs_count]u64 = undefined;
     var b_limbs: [limbs_count]u64 = undefined;
@@ -141,15 +125,13 @@ pub fn sub(a: CompressedScalar, b: CompressedScalar) CompressedScalar {
         borrow = diff1[1] | diff2[1];
     }
 
-    // A borrow means the result went negative, so add r back.
-    if (borrow == 1) {
-        var carry: u1 = 0;
-        inline for (0..limbs_count) |i| {
-            const sum1 = @addWithOverflow(result[i], modulus[i]);
-            const sum2 = @addWithOverflow(sum1[0], carry);
-            result[i] = sum2[0];
-            carry = sum1[1] | sum2[1];
-        }
+    const mask = 0 -% @as(u64, borrow);
+    var carry: u1 = 0;
+    inline for (0..limbs_count) |i| {
+        const sum1 = @addWithOverflow(result[i], modulus[i] & mask);
+        const sum2 = @addWithOverflow(sum1[0], carry);
+        result[i] = sum2[0];
+        carry = sum1[1] | sum2[1];
     }
 
     var out: CompressedScalar = undefined;
@@ -166,7 +148,7 @@ pub fn neg(s: CompressedScalar) CompressedScalar {
     return sub(zero, s);
 }
 
-/// Multiply two scalars modulo r.
+/// Multiply two canonical big-endian scalars modulo r.
 pub fn mul(a: CompressedScalar, b: CompressedScalar) CompressedScalar {
     var a_limbs: [limbs_count]u64 = undefined;
     var b_limbs: [limbs_count]u64 = undefined;
@@ -181,14 +163,14 @@ pub fn mul(a: CompressedScalar, b: CompressedScalar) CompressedScalar {
     inline for (0..limbs_count) |i| {
         var carry: u64 = 0;
         inline for (0..limbs_count) |j| {
-            const product = @as(u128, a_limbs[i]) * @as(u128, b_limbs[j]) + @as(u128, t[i + j]) + @as(u128, carry);
+            const product = @as(u128, a_limbs[i]) * b_limbs[j] + t[i + j] + carry;
             t[i + j] = @truncate(product);
             carry = @truncate(product >> 64);
         }
         t[i + limbs_count] = carry;
     }
 
-    const result = barrettReduce(&t);
+    const result = @import("../scalar_reduce.zig").reduce(modulus, &t);
 
     var out: CompressedScalar = undefined;
     inline for (0..limbs_count) |i| {
@@ -198,49 +180,15 @@ pub fn mul(a: CompressedScalar, b: CompressedScalar) CompressedScalar {
     return out;
 }
 
-/// Reduce modulo r by repeated subtraction of r.
-fn barrettReduce(t: *const [limbs_count * 2]u64) [limbs_count]u64 {
-    var result: [limbs_count]u64 = undefined;
-    inline for (0..limbs_count) |i| {
-        result[i] = t[i];
-    }
-
-    while (true) {
-        var borrow: u1 = 0;
-        var reduced: [limbs_count]u64 = undefined;
-        inline for (0..limbs_count) |i| {
-            const diff1 = @subWithOverflow(result[i], modulus[i]);
-            const diff2 = @subWithOverflow(diff1[0], borrow);
-            reduced[i] = diff2[0];
-            borrow = diff1[1] | diff2[1];
-        }
-
-        if (borrow == 1) {
-            break;
-        }
-        result = reduced;
-    }
-
-    return result;
-}
-
-/// Generate a random scalar.
+/// Sample uniformly from [0, r - 1] in the requested byte order.
 pub fn random(io: std.Io, comptime endian: std.builtin.Endian) CompressedScalar {
     var bytes: CompressedScalar = undefined;
-    io.random(&bytes);
-
-    // Clear the top bits so the value is below 2r; reduce() then brings it below r.
-    if (endian == .big) {
-        bytes[0] &= 0x73;
-    } else {
-        bytes[31] &= 0x73;
+    while (true) {
+        io.random(&bytes);
+        bytes[0] &= 0x7f;
+        rejectNonCanonical(bytes) catch continue;
+        return toBytes(bytes, endian);
     }
-
-    return reduce(if (endian == .big) bytes else blk: {
-        var swapped: CompressedScalar = undefined;
-        for (bytes, 0..) |b, i| swapped[31 - i] = b;
-        break :blk swapped;
-    });
 }
 
 /// Check if scalar is zero.

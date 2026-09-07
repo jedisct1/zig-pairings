@@ -195,15 +195,13 @@ pub const Fp = struct {
             borrow = diff1[1] | diff2[1];
         }
 
-        // A borrow means the result went negative, so bring it back with a modulus add.
-        if (borrow == 1) {
-            var carry: u1 = 0;
-            inline for (0..limbs_count) |i| {
-                const sum1 = @addWithOverflow(result[i], modulus[i]);
-                const sum2 = @addWithOverflow(sum1[0], carry);
-                result[i] = sum2[0];
-                carry = sum1[1] | sum2[1];
-            }
+        const mask = 0 -% @as(u64, borrow);
+        var carry: u1 = 0;
+        inline for (0..limbs_count) |i| {
+            const sum1 = @addWithOverflow(result[i], modulus[i] & mask);
+            const sum2 = @addWithOverflow(sum1[0], carry);
+            result[i] = sum2[0];
+            carry = sum1[1] | sum2[1];
         }
 
         return .{ .limbs = result };
@@ -221,7 +219,7 @@ pub const Fp = struct {
         inline for (0..limbs_count) |i| {
             var carry: u64 = 0;
             inline for (0..limbs_count) |j| {
-                const product = @as(u128, a.limbs[i]) * @as(u128, b.limbs[j]) + @as(u128, t[i + j]) + @as(u128, carry);
+                const product = @as(u128, a.limbs[i]) * b.limbs[j] + t[i + j] + carry;
                 t[i + j] = @truncate(product);
                 carry = @truncate(product >> 64);
             }
@@ -247,13 +245,12 @@ pub const Fp = struct {
             var carry: u64 = 0;
 
             inline for (0..limbs_count) |j| {
-                const product = @as(u128, k) * @as(u128, modulus[j]) + @as(u128, wide[i + j]) + @as(u128, carry);
+                const product = @as(u128, k) * modulus[j] + wide[i + j] + carry;
                 wide[i + j] = @truncate(product);
                 carry = @truncate(product >> 64);
             }
 
-            var idx = i + limbs_count;
-            while (carry != 0 and idx < limbs_count * 2) : (idx += 1) {
+            inline for (i + limbs_count..limbs_count * 2) |idx| {
                 const sum = @addWithOverflow(wide[idx], carry);
                 wide[idx] = sum[0];
                 carry = sum[1];
@@ -376,7 +373,7 @@ pub const Fp = struct {
                     @as(u64, bytes[j * 8 + 4]) << 24 |
                     @as(u64, bytes[j * 8 + 5]) << 16 |
                     @as(u64, bytes[j * 8 + 6]) << 8 |
-                    @as(u64, bytes[j * 8 + 7]);
+                    bytes[j * 8 + 7];
             }
             break :blk l;
         };

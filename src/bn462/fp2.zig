@@ -61,12 +61,12 @@ pub const Fp2 = struct {
 
     /// Return true if the element is zero.
     pub fn isZero(fe: Fp2) bool {
-        return fe.c0.isZero() and fe.c1.isZero();
+        return (@intFromBool(fe.c0.isZero()) & @intFromBool(fe.c1.isZero())) != 0;
     }
 
     /// Return true if both elements are equivalent.
     pub fn equivalent(a: Fp2, b: Fp2) bool {
-        return a.c0.equivalent(b.c0) and a.c1.equivalent(b.c1);
+        return (@intFromBool(a.c0.equivalent(b.c0)) & @intFromBool(a.c1.equivalent(b.c1))) != 0;
     }
 
     /// Conditionally replace the element with `other` when `choice` is 1 (constant-time).
@@ -190,59 +190,28 @@ pub const Fp2 = struct {
     ///
     /// Uses the complex method, which applies because Fp2 = Fp[u]/(u^2 + 1).
     pub fn sqrt(x2: Fp2) NotSquareError!Fp2 {
-        if (x2.isZero()) {
-            return zero;
-        }
-
-        const c0_sq = x2.c0.sq();
-        const c1_sq = x2.c1.sq();
-        const n = c0_sq.add(c1_sq);
-
-        const sqrt_n = n.sqrt() catch return error.NotSquare;
-
-        // Of the two candidates for the real part, take whichever one is a square.
-        const two = Fp.fromInt(2);
-        const two_inv = two.invert();
-
-        var delta = x2.c0.add(sqrt_n);
-        if (!delta.isSquare()) {
-            delta = x2.c0.sub(sqrt_n);
-        }
-
-        const delta_half = delta.mul(two_inv);
-
-        const sqrt_delta_half = delta_half.sqrt() catch {
-            // Shouldn't happen after the isSquare check; fall back to the other branch for safety.
-            const other_delta = x2.c0.sub(sqrt_n).add(x2.c0.add(sqrt_n)).sub(delta);
-            const other_half = other_delta.mul(two_inv);
-            const other_sqrt = other_half.sqrt() catch return error.NotSquare;
-
-            const result_c0 = other_sqrt;
-            const result_c1 = x2.c1.mul(other_sqrt.dbl().invert());
-            const result = Fp2{ .c0 = result_c0, .c1 = result_c1 };
-
-            if (result.sq().equivalent(x2)) {
-                return result;
+        // Handle purely imaginary roots without dividing by zero.
+        if (x2.c1.isZero()) {
+            if (x2.c0.sqrt()) |root| {
+                return .{ .c0 = root, .c1 = Fp.zero };
+            } else |_| {
+                return .{ .c0 = Fp.zero, .c1 = try x2.c0.neg().sqrt() };
             }
-            return error.NotSquare;
+        }
+
+        const sqrt_n = try x2.norm().sqrt();
+        const two_inv = comptime blk: {
+            @setEvalBranchQuota(1000000);
+            break :blk Fp.fromInt(2).invert();
         };
-
-        const denom = sqrt_delta_half.dbl();
-        const result_c1 = x2.c1.mul(denom.invert());
-
-        const result = Fp2{ .c0 = sqrt_delta_half, .c1 = result_c1 };
-
-        if (result.sq().equivalent(x2)) {
-            return result;
-        }
-
-        // The other square root is the negation.
-        const neg_result = result.neg();
-        if (neg_result.sq().equivalent(x2)) {
-            return neg_result;
-        }
-
-        return error.NotSquare;
+        const delta = x2.c0.add(sqrt_n).mul(two_inv);
+        const real = delta.sqrt() catch try x2.c0.sub(sqrt_n).mul(two_inv).sqrt();
+        const result = Fp2{
+            .c0 = real,
+            .c1 = x2.c1.mul(real.dbl().invert()),
+        };
+        if (!result.sq().equivalent(x2)) return error.NotSquare;
+        return result;
     }
 
     /// Return true if the element is the lexicographically larger of {x, -x}.

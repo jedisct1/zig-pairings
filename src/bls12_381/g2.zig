@@ -9,6 +9,7 @@ const crypto = std.crypto;
 const Fp = @import("fp.zig").Fp;
 const Fp2 = @import("fp2.zig").Fp2;
 const scalar = @import("scalar.zig");
+const projective = @import("../projective.zig");
 
 const EncodingError = crypto.errors.EncodingError;
 const IdentityElementError = crypto.errors.IdentityElementError;
@@ -92,7 +93,7 @@ pub const G2 = struct {
     /// Uncompressed point encoding size.
     pub const uncompressed_length = 192;
 
-    /// Create a point from affine coordinates, checking it's on the curve.
+    /// Create a curve point without checking subgroup membership.
     pub fn fromAffineCoordinates(affine: AffineCoordinates) EncodingError!G2 {
         const x = affine.x;
         const y = affine.y;
@@ -112,6 +113,9 @@ pub const G2 = struct {
     ///
     /// The encoding is the x-coordinate with flags in the top three bits,
     /// laid out the same way as for G1.
+    ///
+    /// Allows identity and points outside the subgroup.
+    /// Use isInSubgroup() and rejectIdentity() as required by the protocol.
     pub fn fromCompressed(bytes: [compressed_length]u8) (EncodingError || NotSquareError || NonCanonicalError)!G2 {
         const flags = bytes[0] >> 5;
         const is_compressed = (flags & 0b100) != 0;
@@ -176,6 +180,9 @@ pub const G2 = struct {
     }
 
     /// Deserialize from uncompressed form.
+    ///
+    /// Allows identity and points outside the subgroup.
+    /// Use isInSubgroup() and rejectIdentity() as required by the protocol.
     pub fn fromUncompressed(bytes: [uncompressed_length]u8) (EncodingError || NonCanonicalError)!G2 {
         const flags = bytes[0] >> 5;
         const is_compressed = (flags & 0b100) != 0;
@@ -245,10 +252,6 @@ pub const G2 = struct {
 
     /// Convert to affine coordinates.
     pub fn affineCoordinates(p: G2) AffineCoordinates {
-        if (p.isIdentity()) {
-            return AffineCoordinates.identityElement;
-        }
-
         const z_inv = p.z.invert();
         return .{
             .x = p.x.mul(z_inv),
@@ -282,48 +285,13 @@ pub const G2 = struct {
         };
     }
 
-    /// Double a point.
     pub fn dbl(p: G2) G2 {
-        return addGeneral(p, p);
-    }
-
-    /// General point addition that also handles P + P (doubling).
-    fn addGeneral(p: G2, q: G2) G2 {
-        if (p.isIdentity()) return q;
-        if (q.isIdentity()) return p;
-
-        // Working in affine coordinates keeps the special cases easy to spot.
-        const a = p.affineCoordinates();
-        const b = q.affineCoordinates();
-
-        if (a.x.equivalent(b.x)) {
-            if (a.y.equivalent(b.y)) {
-                return dblAffine(a);
-            } else {
-                return identityElement;
-            }
-        }
-
-        const lambda = b.y.sub(a.y).mul(b.x.sub(a.x).invert());
-        const x3 = lambda.sq().sub(a.x).sub(b.x);
-        const y3 = lambda.mul(a.x.sub(x3)).sub(a.y);
-
-        return G2{ .x = x3, .y = y3, .z = Fp2.one };
-    }
-
-    /// Affine doubling formula.
-    fn dblAffine(p: AffineCoordinates) G2 {
-        const xx = p.x.sq();
-        const lambda = xx.add(xx).add(xx).mul(p.y.dbl().invert());
-        const x3 = lambda.sq().sub(p.x.dbl());
-        const y3 = lambda.mul(p.x.sub(x3)).sub(p.y);
-
-        return G2{ .x = x3, .y = y3, .z = Fp2.one };
+        return projective.dbl(G2, p);
     }
 
     /// Add two points.
     pub fn add(p: G2, q: G2) G2 {
-        return addGeneral(p, q);
+        return projective.add(G2, p, q);
     }
 
     /// Subtract two points.
@@ -333,127 +301,72 @@ pub const G2 = struct {
 
     /// Add a point in affine coordinates.
     pub fn addMixed(p: G2, q: AffineCoordinates) G2 {
-        return p.add(G2{ .x = q.x, .y = q.y, .z = Fp2.one });
+        var other = G2{ .x = q.x, .y = q.y, .z = Fp2.one };
+        const is_identity = @intFromBool(q.x.isZero()) & @intFromBool(q.y.isZero());
+        other.cMov(identityElement, is_identity);
+        return p.add(other);
     }
 
     /// Subtract a point in affine coordinates.
     pub fn subMixed(p: G2, q: AffineCoordinates) G2 {
-        return p.add(G2{ .x = q.x, .y = q.y.neg(), .z = Fp2.one });
+        return p.addMixed(q.neg());
     }
 
-    /// Scalar multiplication.
+    /// Multiply by a secret scalar, rejecting an identity result.
     pub fn mul(p: G2, scalar_bytes: [32]u8, endian: std.builtin.Endian) IdentityElementError!G2 {
-        const s = if (endian == .little) scalar_bytes else blk: {
-            var swapped: [32]u8 = undefined;
-            for (scalar_bytes, 0..) |b, i| swapped[31 - i] = b;
-            break :blk swapped;
-        };
-
-        var result = identityElement;
-        var temp = p;
-
-        for (s) |byte| {
-            var b = byte;
-            for (0..8) |_| {
-                if (b & 1 == 1) {
-                    result = result.add(temp);
-                }
-                temp = temp.dbl();
-                b >>= 1;
-            }
-        }
+        const result = projective.mul(G2, p, &scalar_bytes, endian);
 
         try result.rejectIdentity();
         return result;
     }
 
-    /// Scalar multiplication with public scalar (variable time).
     pub fn mulPublic(p: G2, scalar_bytes: [32]u8, endian: std.builtin.Endian) IdentityElementError!G2 {
         return p.mul(scalar_bytes, endian);
     }
 
-    /// Psi endomorphism, used by the subgroup check and by cofactor clearing.
+    /// Endomorphism used for cofactor clearing.
     pub fn psi(p: G2) G2 {
-        const affine = p.affineCoordinates();
-
-        // Frobenius on Fp2 is conjugation.
-        const x_frobenius = affine.x.conjugate();
-        const y_frobenius = affine.y.conjugate();
-
-        const x_new = x_frobenius.mul(psi_coeff_x);
-        const y_new = y_frobenius.mul(psi_coeff_y);
-
-        return G2{ .x = x_new, .y = y_new, .z = Fp2.one };
-    }
-
-    /// Psi applied twice, which collapses to a scaling and a negation.
-    pub fn psi2(p: G2) G2 {
-        const affine = p.affineCoordinates();
         return G2{
-            .x = affine.x.mul(psi2_coeff_x),
-            .y = affine.y.neg(),
-            .z = Fp2.one,
+            .x = p.x.conjugate().mul(psi_coeff_x),
+            .y = p.y.conjugate().mul(psi_coeff_y),
+            .z = p.z.conjugate(),
         };
     }
 
-    /// Clear the cofactor to ensure the point is in G2.
-    ///
-    /// A chain of endomorphisms replaces the much more expensive
-    /// multiplication by the cofactor itself.
+    pub fn psi2(p: G2) G2 {
+        return G2{
+            .x = p.x.mul(psi2_coeff_x),
+            .y = p.y.neg(),
+            .z = p.z,
+        };
+    }
+
+    /// Map a curve point into G2 using the effective cofactor from RFC 9380.
     pub fn clearCofactor(p: G2) G2 {
-        const t = p.mulByX();
+        const t1 = p.mulByX();
         const t2 = p.psi();
-
-        var result = p.add(t);
-        result = result.add(t2.add(t.psi()).add(p.psi2()));
-
-        return result;
+        const t3 = p.dbl().psi2().sub(t2);
+        return t3.add(t1.add(t2).mulByX()).sub(t1).sub(p);
     }
 
-    /// Multiply by x (the BLS parameter).
-    ///
-    /// The parameter is a compile-time constant, so the chain of doublings and
-    /// additions below is spelled out rather than driven by its bits.
+    /// Multiply by the signed BLS parameter.
     fn mulByX(p: G2) G2 {
-        var result = p;
-
-        result = result.dbl();
-        result = result.add(p);
-        result = result.dbl();
-        result = result.add(p);
-        inline for (0..9) |_| {
-            result = result.dbl();
-        }
-        result = result.add(p);
-        inline for (0..32) |_| {
-            result = result.dbl();
-        }
-        result = result.add(p);
-        inline for (0..16) |_| {
-            result = result.dbl();
-        }
-
-        // x is negative, so negate the result.
-        return result.neg();
+        const t_abs = [8]u8{ 0xd2, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00 };
+        return projective.mul(G2, p, &t_abs, .big).neg();
     }
 
-    /// Check if the point is in the correct subgroup G2.
-    ///
-    /// Members of the subgroup are exactly the points the endomorphism
-    /// combination below sends to the identity.
+    /// Validate subgroup membership, allowing the identity.
     pub fn isInSubgroup(p: G2) bool {
-        const x_p = p.mulByX();
-        const psi_p = p.psi();
-        const psi2_x_p = x_p.psi2();
-
-        const result = x_p.add(p).add(psi_p).add(psi2_x_p);
-        return result.isIdentity();
+        if (!projective.isOnCurve(G2, p)) return false;
+        return projective.mul(G2, p, &scalar.modulus_bytes, .big).isIdentity();
     }
 
     /// Return a random point in G2.
     pub fn random(io: std.Io) G2 {
-        const s = scalar.random(io, .little);
-        return basePoint.mul(s, .little) catch unreachable;
+        while (true) {
+            const s = scalar.random(io, .big);
+            return basePoint.mul(s, .big) catch continue;
+        }
     }
 };
 

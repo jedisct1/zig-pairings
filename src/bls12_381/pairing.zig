@@ -13,7 +13,11 @@ const G2Affine = @import("g2.zig").AffineCoordinates;
 /// Element of the target group GT (a subgroup of Fp12*).
 pub const GT = Fp12;
 
+/// Input to a pairing product.
+pub const Pair = struct { p: G1, q: G2 };
+
 /// Compute the optimal Ate pairing e(P, Q).
+/// Requires validated subgroup inputs.
 pub fn pair(p: G1, q: G2) GT {
     if (p.isIdentity() or q.isIdentity()) {
         return GT.one;
@@ -32,7 +36,7 @@ pub fn pair(p: G1, q: G2) GT {
 ///
 /// Cheaper than pairing each term separately and multiplying, because the
 /// final exponentiation is only paid for once.
-pub fn multiPair(pairs: []const struct { p: G1, q: G2 }) GT {
+pub fn multiPair(pairs: []const Pair) GT {
     var f = GT.one;
 
     for (pairs) |item| {
@@ -46,10 +50,9 @@ pub fn multiPair(pairs: []const struct { p: G1, q: G2 }) GT {
     return f.finalExponentiation();
 }
 
-/// Verify that e(P1, Q1) * e(P2, Q2) = 1.
-///
-/// This is the shape a BLS signature verification takes.
-pub fn pairingCheck(pairs: []const struct { p: G1, q: G2 }) bool {
+/// Check that the pairing product is one. Callers must validate subgroup
+/// membership and enforce the protocol's identity policy.
+pub fn pairingCheck(pairs: []const Pair) bool {
     const result = multiPair(pairs);
     return result.isOne();
 }
