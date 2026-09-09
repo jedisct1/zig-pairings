@@ -24,7 +24,8 @@
 //! The compressed and uncompressed encodings here are therefore specific to
 //! this library.
 //!
-//! Field element and scalar encodings do follow the specification.
+//! Scalar encoding follows the specification when using big-endian order.
+//! The specification defines no standalone field-element or GT encoding.
 //!
 //! References:
 //! - https://datatracker.ietf.org/doc/draft-irtf-cfrg-pairing-friendly-curves/

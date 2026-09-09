@@ -99,8 +99,8 @@ pub const G1 = struct {
     /// - Bit 5: sign of y, 1 if y is the lexicographically largest root
     /// - Bits 0-4: reserved, must be 0
     ///
-    /// Allows identity and points outside the subgroup.
-    /// Use isInSubgroup() and rejectIdentity() as required by the protocol.
+    /// All curve points are in G1 because the cofactor is one.
+    /// Allows identity; use rejectIdentity() if the protocol requires it.
     pub fn fromCompressed(bytes: [compressed_length]u8) (EncodingError || NotSquareError || NonCanonicalError)!G1 {
         const flags = bytes[0];
         const is_compressed = (flags & 0x80) != 0;
@@ -168,8 +168,8 @@ pub const G1 = struct {
     /// - Bit 6: 1 if point at infinity
     /// - Bits 0-5: reserved, must be 0
     ///
-    /// Allows identity and points outside the subgroup.
-    /// Use isInSubgroup() and rejectIdentity() as required by the protocol.
+    /// All curve points are in G1 because the cofactor is one.
+    /// Allows identity; use rejectIdentity() if the protocol requires it.
     pub fn fromUncompressed(bytes: [uncompressed_length]u8) (EncodingError || NonCanonicalError)!G1 {
         const flags = bytes[0];
         const is_compressed = (flags & 0x80) != 0;

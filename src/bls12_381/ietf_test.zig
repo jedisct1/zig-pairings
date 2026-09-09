@@ -241,3 +241,65 @@ test "Fp2 serialization order (c1 || c0 for big endian)" {
     const parsed = try Fp2.fromBytes(bytes, .big);
     try std.testing.expect(parsed.equivalent(elem));
 }
+
+test "G1 compressed decoding rejects points outside the subgroup" {
+    // (0, 2) has order three on E, whereas r is prime and greater than three.
+    const p = try G1.fromAffineCoordinates(.{ .x = Fp.zero, .y = Fp.fromInt(2) });
+    try std.testing.expect(!p.isInSubgroup());
+    try std.testing.expectError(error.InvalidEncoding, G1.fromCompressed(p.toCompressed()));
+    try std.testing.expectError(error.InvalidEncoding, G1.fromCompressed(p.neg().toCompressed()));
+}
+
+test "G1 uncompressed decoding rejects points outside the subgroup" {
+    const p = try G1.fromAffineCoordinates(.{ .x = Fp.zero, .y = Fp.fromInt(2) });
+    try std.testing.expect(!p.isInSubgroup());
+    try std.testing.expectError(error.InvalidEncoding, G1.fromUncompressed(p.toUncompressed()));
+    try std.testing.expectError(error.InvalidEncoding, G1.fromUncompressed(p.neg().toUncompressed()));
+}
+
+fn nonSubgroupG2() !G2 {
+    const x = Fp2.fromInts(2, 0);
+    const y = try x.sq().mul(x).add(G2.B).sqrt();
+    return G2.fromAffineCoordinates(.{ .x = x, .y = y });
+}
+
+test "G2 compressed decoding rejects points outside the subgroup" {
+    const p = try nonSubgroupG2();
+    try std.testing.expect(!p.isInSubgroup());
+    try std.testing.expectError(error.InvalidEncoding, G2.fromCompressed(p.toCompressed()));
+    try std.testing.expectError(error.InvalidEncoding, G2.fromCompressed(p.neg().toCompressed()));
+}
+
+test "G2 uncompressed decoding rejects points outside the subgroup" {
+    const p = try nonSubgroupG2();
+    try std.testing.expect(!p.isInSubgroup());
+    try std.testing.expectError(error.InvalidEncoding, G2.fromUncompressed(p.toUncompressed()));
+    try std.testing.expectError(error.InvalidEncoding, G2.fromUncompressed(p.neg().toUncompressed()));
+}
+
+test "point decoding rejects encodings for the other group" {
+    try std.testing.expectError(error.InvalidEncoding, G1.fromUncompressed(G2.basePoint.toCompressed()));
+    try std.testing.expectError(error.InvalidEncoding, G2.fromCompressed(G1.basePoint.toUncompressed()));
+    try std.testing.expectError(error.InvalidEncoding, G1.fromUncompressed(G2.identityElement.toCompressed()));
+    try std.testing.expectError(error.InvalidEncoding, G2.fromCompressed(G1.identityElement.toUncompressed()));
+}
+
+test "scalar serialization matches the reference vectors" {
+    const vectors = [_][32]u8{
+        parseHex("0000000000000000000000000000000000000000000000000000000000000000"),
+        parseHex("0000000000000000000000000000000000000000000000000000000000000001"),
+        parseHex("73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000000"),
+    };
+    for (vectors) |bytes| {
+        const s = try scalar.fromBytes(bytes, .big);
+        try std.testing.expectEqualSlices(u8, &bytes, &scalar.toBytes(s, .big));
+        var little = bytes;
+        std.mem.reverse(u8, &little);
+        try std.testing.expectEqualSlices(u8, &little, &scalar.toBytes(s, .little));
+        try std.testing.expectEqualSlices(u8, &s, &try scalar.fromBytes(little, .little));
+    }
+    try std.testing.expectError(error.NonCanonical, scalar.fromBytes(parseHex(r_hex), .big));
+    var little_r = parseHex(r_hex);
+    std.mem.reverse(u8, &little_r);
+    try std.testing.expectError(error.NonCanonical, scalar.fromBytes(little_r, .little));
+}

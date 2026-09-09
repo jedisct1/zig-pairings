@@ -114,8 +114,8 @@ pub const G2 = struct {
     /// The encoding is the x-coordinate with flags in the top three bits,
     /// laid out the same way as for G1.
     ///
-    /// Allows identity and points outside the subgroup.
-    /// Use isInSubgroup() and rejectIdentity() as required by the protocol.
+    /// Checks subgroup membership and allows identity.
+    /// Use rejectIdentity() if the protocol requires it.
     pub fn fromCompressed(bytes: [compressed_length]u8) (EncodingError || NotSquareError || NonCanonicalError)!G2 {
         const flags = bytes[0] >> 5;
         const is_compressed = (flags & 0b100) != 0;
@@ -157,7 +157,9 @@ pub const G2 = struct {
             y = y.neg();
         }
 
-        return G2{ .x = x, .y = y, .z = Fp2.one };
+        const p = G2{ .x = x, .y = y, .z = Fp2.one };
+        if (!p.isInSubgroup()) return error.InvalidEncoding;
+        return p;
     }
 
     /// Serialize to compressed form.
@@ -181,8 +183,8 @@ pub const G2 = struct {
 
     /// Deserialize from uncompressed form.
     ///
-    /// Allows identity and points outside the subgroup.
-    /// Use isInSubgroup() and rejectIdentity() as required by the protocol.
+    /// Checks subgroup membership and allows identity.
+    /// Use rejectIdentity() if the protocol requires it.
     pub fn fromUncompressed(bytes: [uncompressed_length]u8) (EncodingError || NonCanonicalError)!G2 {
         const flags = bytes[0] >> 5;
         const is_compressed = (flags & 0b100) != 0;
@@ -217,7 +219,9 @@ pub const G2 = struct {
         const x = try Fp2.fromBytes(x_bytes, .big);
         const y = try Fp2.fromBytes(bytes[96..192].*, .big);
 
-        return fromAffineCoordinates(.{ .x = x, .y = y });
+        const p = try fromAffineCoordinates(.{ .x = x, .y = y });
+        if (!p.isInSubgroup()) return error.InvalidEncoding;
+        return p;
     }
 
     /// Serialize to uncompressed form.

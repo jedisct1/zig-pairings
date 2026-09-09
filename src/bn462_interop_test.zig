@@ -11,6 +11,49 @@ const Fp12 = bn462.Fp12;
 const G1 = bn462.G1;
 const G2 = bn462.G2;
 const pairing = bn462.pairing;
+const scalar = bn462.scalar;
+
+test "scalar serialization matches the reference vectors" {
+    const vectors = [_][]const u8{
+        "0000000000000000000000000000000000000000000000000000000000" ++
+            "0000000000000000000000000000000000000000000000000000000000",
+        "0000000000000000000000000000000000000000000000000000000000" ++
+            "0000000000000000000000000000000000000000000000000000000001",
+        "240480360120023ffffffffff6ff0cf6b7d9bfca0000000000d812908e" ++
+            "e1c201f7fffffffff6ff66fc7bf717f7c0000000002401b007e010800c",
+    };
+    for (vectors) |hex| {
+        var bytes: [58]u8 = undefined;
+        _ = try std.fmt.hexToBytes(&bytes, hex);
+        const s = try scalar.fromBytes(bytes, .big);
+        try std.testing.expectEqualSlices(u8, &bytes, &scalar.toBytes(s, .big));
+        var little = bytes;
+        std.mem.reverse(u8, &little);
+        try std.testing.expectEqualSlices(u8, &little, &scalar.toBytes(s, .little));
+        try std.testing.expectEqualSlices(u8, &s, &try scalar.fromBytes(little, .little));
+    }
+    var r: [58]u8 = undefined;
+    _ = try std.fmt.hexToBytes(&r, "240480360120023ffffffffff6ff0cf6b7d9bfca0000000000d812908e" ++
+        "e1c201f7fffffffff6ff66fc7bf717f7c0000000002401b007e010800d");
+    try std.testing.expectError(error.NonCanonical, scalar.fromBytes(r, .big));
+    std.mem.reverse(u8, &r);
+    try std.testing.expectError(error.NonCanonical, scalar.fromBytes(r, .little));
+}
+
+test "subgroup checks distinguish curve points from group elements" {
+    try std.testing.expect(G1.basePoint.isInSubgroup());
+    try std.testing.expect(G2.basePoint.isInSubgroup());
+    try std.testing.expect(G1.identityElement.isInSubgroup());
+    try std.testing.expect(G2.identityElement.isInSubgroup());
+
+    // Every point on E is in G1 because its cofactor is one.
+    const p = try G1.fromAffineCoordinates(.{ .x = Fp.one, .y = try Fp.fromInt(6).sqrt() });
+    try std.testing.expect(p.isInSubgroup());
+
+    const x = Fp2.one;
+    const q = try G2.fromAffineCoordinates(.{ .x = x, .y = try x.add(G2.B).sqrt() });
+    try std.testing.expect(!q.isInSubgroup());
+}
 
 // G1 generator (base point BP)
 // x = 0x21a6d67ef250191fadba34a0a30160b9ac9264b6f95f63b3edbec3cf4b2e689d

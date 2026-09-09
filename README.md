@@ -4,7 +4,7 @@ A pairing-friendly elliptic curve library for Zig, implementing BLS12-381 and BN
 
 Useful for BLS signatures, zero-knowledge proofs, etc.
 
-This work is based on the [`draft-irtf-cfrg-pairing-friendly-curves`](https://datatracker.ietf.org/doc/draft-irtf-cfrg-pairing-friendly-curves/) draft.
+This work is based on [`draft-irtf-cfrg-pairing-friendly-curves-14`](https://datatracker.ietf.org/doc/html/draft-irtf-cfrg-pairing-friendly-curves-14).
 
 ## Curves
 
