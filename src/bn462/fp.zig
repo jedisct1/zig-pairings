@@ -79,7 +79,7 @@ pub const Fp = struct {
 
         var limbs: [limbs_count]u64 = undefined;
 
-        limbs[7] = @as(u64, s[0]) << 8 | @as(u64, s[1]);
+        limbs[7] = (@as(u64, s[0]) << 8) | @as(u64, s[1]);
 
         inline for (0..7) |i| {
             const j = 6 - i;
@@ -387,18 +387,11 @@ pub const Fp = struct {
         }
         const limbs: [limbs_count]u64 = comptime blk: {
             var l: [limbs_count]u64 = undefined;
-            l[7] = @as(u64, bytes[0]) << 8 | @as(u64, bytes[1]);
+            l[7] = (@as(u64, bytes[0]) << 8) | @as(u64, bytes[1]);
             for (0..7) |i| {
                 const j = 6 - i;
                 const offset = 2 + i * 8;
-                l[j] = @as(u64, bytes[offset]) << 56 |
-                    @as(u64, bytes[offset + 1]) << 48 |
-                    @as(u64, bytes[offset + 2]) << 40 |
-                    @as(u64, bytes[offset + 3]) << 32 |
-                    @as(u64, bytes[offset + 4]) << 24 |
-                    @as(u64, bytes[offset + 5]) << 16 |
-                    @as(u64, bytes[offset + 6]) << 8 |
-                    @as(u64, bytes[offset + 7]);
+                l[j] = mem.readInt(u64, bytes[offset..][0..8], .big);
             }
             break :blk l;
         };

@@ -56,7 +56,7 @@ pub fn rejectNonCanonical(s: CompressedScalar) NonCanonicalError!void {
 /// stand alone in the high limb.
 fn bytesToLimbs(s: CompressedScalar) [limbs_count]u64 {
     var limbs: [limbs_count]u64 = @splat(0);
-    limbs[7] = @as(u64, s[0]) << 8 | @as(u64, s[1]);
+    limbs[7] = (@as(u64, s[0]) << 8) | @as(u64, s[1]);
     inline for (0..7) |i| {
         const j = 6 - i;
         const offset = 2 + i * 8;

@@ -369,14 +369,7 @@ pub const Fp = struct {
             var l: [limbs_count]u64 = undefined;
             for (0..limbs_count) |i| {
                 const j = limbs_count - 1 - i;
-                l[i] = @as(u64, bytes[j * 8]) << 56 |
-                    @as(u64, bytes[j * 8 + 1]) << 48 |
-                    @as(u64, bytes[j * 8 + 2]) << 40 |
-                    @as(u64, bytes[j * 8 + 3]) << 32 |
-                    @as(u64, bytes[j * 8 + 4]) << 24 |
-                    @as(u64, bytes[j * 8 + 5]) << 16 |
-                    @as(u64, bytes[j * 8 + 6]) << 8 |
-                    @as(u64, bytes[j * 8 + 7]);
+                l[i] = mem.readInt(u64, bytes[j * 8 ..][0..8], .big);
             }
             break :blk l;
         };
