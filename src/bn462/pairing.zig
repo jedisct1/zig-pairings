@@ -1,6 +1,6 @@
 //! Optimal Ate pairing for BN462.
 //!
-//! Computes the bilinear pairing e: G1 × G2 → GT.
+//! Computes the bilinear pairing e: G1 x G2 -> GT.
 //!
 //! For BN curves, the optimal ate pairing uses the loop parameter 6x + 2.
 
@@ -25,6 +25,12 @@ const ate_loop_count_lo: u64 = 0xfffffffffffe7ffc;
 const ate_loop_count_hi: u64 = 0x001800bfffffffff;
 
 /// Compute the optimal Ate pairing e(P, Q).
+///
+/// The result matches the test vectors of the draft, without the extra
+/// exponent some other libraries apply.
+///
+/// Both points must be in their groups, which is always the case for decoded
+/// points.
 pub fn pair(p: G1, q: G2) GT {
     if (p.isIdentity() or q.isIdentity()) {
         return GT.one;
@@ -69,7 +75,7 @@ pub fn pairingCheck(pairs: []const struct { p: G1, q: G2 }) bool {
 ///
 /// The loop parameter spans more than one word, so it is walked from the top
 /// of the high word down through the low one.
-pub fn millerLoop(p: G1Affine, q: G2Affine) Fp12 {
+fn millerLoop(p: G1Affine, q: G2Affine) Fp12 {
     var r = G2{ .x = q.x, .y = q.y, .z = Fp2.one };
     var f = Fp12.one;
 
@@ -321,39 +327,20 @@ const frobenius_coeff_y_sq = Fp2{
 };
 
 test "pairing with identity" {
-    const g1 = G1.basePoint;
-    const g2 = G2.basePoint;
-
-    // e(O, Q) = 1
-    const result1 = pair(G1.identityElement, g2);
-    try std.testing.expect(result1.isOne());
-
-    // e(P, O) = 1
-    const result2 = pair(g1, G2.identityElement);
-    try std.testing.expect(result2.isOne());
+    try std.testing.expect(pair(G1.identityElement, G2.basePoint).isOne());
+    try std.testing.expect(pair(G1.basePoint, G2.identityElement).isOne());
 }
 
-test "pairing non-degeneracy" {
-    const g1 = G1.basePoint;
-    const g2 = G2.basePoint;
+test "pairing bilinearity" {
+    const p = G1.basePoint;
+    const q = G2.basePoint;
+    const e = pair(p, q);
+    const e_squared = e.mul(e);
 
-    // e(G1, G2) should not be 1.
-    const result = pair(g1, g2);
-    try std.testing.expect(!result.isOne());
-}
-
-test "first doubling step" {
-    const g2 = G2.basePoint;
-    const q_affine = g2.affineCoordinates();
-
-    var r = G2{ .x = q_affine.x, .y = q_affine.y, .z = Fp2.one };
-    const dbl = doublingStep(&r);
-
-    // R should have been updated, so z is no longer 1.
-    try std.testing.expect(!r.z.equivalent(Fp2.one));
-
-    try std.testing.expect(!dbl.c0.isZero());
-    try std.testing.expect(!dbl.c1.isZero());
+    try std.testing.expect(pair(p.dbl(), q).equivalent(e_squared));
+    try std.testing.expect(pair(p, q.dbl()).equivalent(e_squared));
+    try std.testing.expect(pair(p.neg(), q).mul(e).isOne());
+    try std.testing.expect(pair(p, q.neg()).mul(e).isOne());
 }
 
 test "frobenius endomorphisms preserve curve equation" {

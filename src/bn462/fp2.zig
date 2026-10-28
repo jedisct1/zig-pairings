@@ -1,6 +1,6 @@
 //! Quadratic extension field Fp2 = Fp[u] / (u^2 + 1) for BN462.
 //!
-//! Elements are represented as a + b*u where a, b ∈ Fp and u^2 = -1.
+//! Elements are represented as a + b*u where a and b are in Fp, and u^2 = -1.
 //!
 //! This is the base field for G2 curve points.
 
@@ -187,62 +187,21 @@ pub const Fp2 = struct {
     }
 
     /// Square root, if one exists.
-    ///
-    /// Uses the complex method, which applies because Fp2 = Fp[u]/(u^2 + 1).
     pub fn sqrt(x2: Fp2) NotSquareError!Fp2 {
-        if (x2.isZero()) {
-            return zero;
-        }
-
-        const c0_sq = x2.c0.sq();
-        const c1_sq = x2.c1.sq();
-        const n = c0_sq.add(c1_sq);
-
-        const sqrt_n = n.sqrt() catch return error.NotSquare;
-
-        // Of the two candidates for the real part, take whichever one is a square.
-        const two = Fp.fromInt(2);
-        const two_inv = two.invert();
-
-        var delta = x2.c0.add(sqrt_n);
-        if (!delta.isSquare()) {
-            delta = x2.c0.sub(sqrt_n);
-        }
-
-        const delta_half = delta.mul(two_inv);
-
-        const sqrt_delta_half = delta_half.sqrt() catch {
-            // Shouldn't happen after the isSquare check; fall back to the other branch for safety.
-            const other_delta = x2.c0.sub(sqrt_n).add(x2.c0.add(sqrt_n)).sub(delta);
-            const other_half = other_delta.mul(two_inv);
-            const other_sqrt = other_half.sqrt() catch return error.NotSquare;
-
-            const result_c0 = other_sqrt;
-            const result_c1 = x2.c1.mul(other_sqrt.dbl().invert());
-            const result = Fp2{ .c0 = result_c0, .c1 = result_c1 };
-
-            if (result.sq().equivalent(x2)) {
-                return result;
+        // The root of a real number is either real or purely imaginary.
+        if (x2.c1.isZero()) {
+            if (x2.c0.sqrt()) |root| {
+                return .{ .c0 = root, .c1 = Fp.zero };
+            } else |_| {
+                return .{ .c0 = Fp.zero, .c1 = try x2.c0.neg().sqrt() };
             }
-            return error.NotSquare;
-        };
-
-        const denom = sqrt_delta_half.dbl();
-        const result_c1 = x2.c1.mul(denom.invert());
-
-        const result = Fp2{ .c0 = sqrt_delta_half, .c1 = result_c1 };
-
-        if (result.sq().equivalent(x2)) {
-            return result;
         }
 
-        // The other square root is the negation.
-        const neg_result = result.neg();
-        if (neg_result.sq().equivalent(x2)) {
-            return neg_result;
-        }
-
-        return error.NotSquare;
+        // The root is a + b*u, where a^2 is whichever of (c0 + n) / 2 and
+        // (c0 - n) / 2 is a square, with n^2 = c0^2 + c1^2.
+        const n = try x2.norm().sqrt();
+        const a = x2.c0.add(n).mul(one_half).sqrt() catch try x2.c0.sub(n).mul(one_half).sqrt();
+        return .{ .c0 = a, .c1 = x2.c1.mul(a.dbl().invert()) };
     }
 
     /// Return true if the element is the lexicographically larger of {x, -x}.
@@ -260,6 +219,11 @@ pub const Fp2 = struct {
             .c1 = Fp.fromInt(c1),
         };
     }
+};
+
+const one_half = blk: {
+    @setEvalBranchQuota(1_000_000);
+    break :blk Fp.fromInt(2).invert();
 };
 
 test "fp2 basic arithmetic" {
@@ -319,4 +283,25 @@ test "fp2 mul by nonresidue" {
     const result = a.mulByNonresidue();
     try std.testing.expect(result.c0.equivalent(Fp.fromInt(2)));
     try std.testing.expect(result.c1.equivalent(Fp.fromInt(11)));
+}
+
+test "fp2 square roots" {
+    // Roots that are real, purely imaginary (as for -1), and general.
+    const roots = [_]Fp2{
+        Fp2.fromInts(3, 0),
+        Fp2.fromInts(0, 1),
+        Fp2.fromInts(3, 4),
+        Fp2.fromInts(123456789, 987654321),
+        Fp2.zero,
+    };
+    for (roots) |r| {
+        const s = r.sq();
+        try std.testing.expect(s.isSquare());
+        try std.testing.expect((try s.sqrt()).sq().equivalent(s));
+    }
+
+    // 2 + u has norm 5, which is not a square in Fp.
+    const not_square = Fp2.fromInts(2, 1);
+    try std.testing.expect(!not_square.isSquare());
+    try std.testing.expectError(error.NotSquare, not_square.sqrt());
 }

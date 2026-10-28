@@ -1,20 +1,11 @@
-//! Pairing-friendly elliptic curve library for Zig.
+//! Pairing-friendly elliptic curves for Zig.
 //!
-//! This library implements the BLS12-381 and BN462 curves, intended for
-//! cryptographic applications including BLS signatures and zero-knowledge
-//! proofs.
+//! This library implements BLS12-381 and BN462, the two curves recommended at
+//! the 128-bit security level by draft-irtf-cfrg-pairing-friendly-curves-14.
+//! They are used for things like BLS signatures and zero-knowledge proofs.
 //!
-//! The top-level aliases below default to BLS12-381.
-//!
-//! BN462 lives under the `bn462` namespace and mirrors the same field, group,
-//! and pairing structure.
-//!
-//! Features:
-//! - Field arithmetic: Fp, Fp2, Fp6, Fp12 with Montgomery multiplication
-//! - Curve groups: G1 (over Fp) and G2 (over Fp2 via sextic twist)
-//! - Optimal Ate pairing with Miller loop and final exponentiation
-//! - Serialization following standard compressed/uncompressed formats
-//! - Scalar arithmetic in the subgroup order field
+//! The top-level aliases below point to BLS12-381.
+//! BN462 lives under the `bn462` namespace and has the same layout.
 //!
 //! Example:
 //! ```zig
@@ -30,14 +21,19 @@
 //! std.debug.assert(e_identity.isOne());
 //! ```
 //!
-//! BLS12-381 point encodings follow the format given by the IETF
-//! specification, so they interoperate with any library that implements it.
+//! Points decoded from bytes or coordinates are always checked to be in their
+//! group, and group operations keep them there.
+//! A point built by hand from its fields has to be checked with
+//! `isInSubgroup` before it is used.
 //!
-//! That format does not carry over to BN462, whose larger characteristic
-//! leaves too few spare bits for the metadata, and the specification
-//! deliberately leaves BN462 point encoding undefined.
+//! The draft leaves a few choices to the protocol using it:
+//! - `fromCompressed` and `fromUncompressed` accept one form each, and
+//!   `fromBytes` accepts both.
+//! - Decoding accepts the identity element, and `rejectIdentity` rejects it.
+//! - `scalar.fromBytes` accepts zero, and `scalar.isZero` detects it.
 //!
-//! The BN462 encoding used here is therefore specific to this library.
+//! Use `mul` for secret scalars, as it runs in constant time.
+//! `mulPublic` is faster, but only for scalars that are not secret.
 
 pub const bls12_381 = @import("bls12_381.zig");
 pub const bn462 = @import("bn462.zig");

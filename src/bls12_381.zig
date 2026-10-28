@@ -1,33 +1,26 @@
-//! BLS12-381 pairing-friendly elliptic curve implementation.
+//! BLS12-381, as defined in Section 4.2.1 of
+//! draft-irtf-cfrg-pairing-friendly-curves-14.
 //!
-//! BLS12-381 is a pairing-friendly curve with embedding degree 12, designed for
-//! approximately 128-bit security.
+//! Its security level is expected to be about 126 bits rather than 128.
 //!
 //! It provides:
-//! - G1: A 255-bit prime order subgroup of E(Fp) where y² = x³ + 4
-//! - G2: A 255-bit prime order subgroup of E'(Fp²) where y² = x³ + 4(1+u)
-//! - GT: The target group, a subgroup of Fp12*
-//! - Optimal Ate pairing: e: G1 × G2 → GT
+//! - G1: the subgroup of order r of E(Fp): y^2 = x^3 + 4
+//! - G2: the subgroup of order r of the twist E'(Fp2): y^2 = x^3 + 4(u + 1)
+//! - GT: the target group, in Fp12
+//! - The optimal Ate pairing e: G1 x G2 -> GT
 //!
-//! Field tower construction:
-//! - Fp: Base field (381-bit prime)
-//! - Fp2 = Fp[u] / (u² + 1)
-//! - Fp6 = Fp2[v] / (v³ - (1+u))
-//! - Fp12 = Fp6[w] / (w² - v)
+//! Field tower:
+//! - Fp2 = Fp[u] / (u^2 + 1)
+//! - Fp6 = Fp2[v] / (v^3 - (u + 1))
+//! - Fp12 = Fp6[w] / (w^2 - v)
 //!
-//! Conformance:
-//! - Compressed and uncompressed G1/G2 encodings follow the IETF specification
-//! - The pairing of the generators matches the IETF test vector
-//! - The bilinearity properties are covered by tests:
-//!   - e(2P, Q) = e(P, Q)^2
-//!   - e(P, 2Q) = e(P, Q)^2
-//!   - e(-P, Q) * e(P, Q) = 1
-//!   - e(P, -Q) * e(P, Q) = 1
+//! Point and scalar encodings follow Section 5 of the draft, and the test
+//! vectors of its Appendices C and D pass.
 //!
 //! References:
+//! - https://datatracker.ietf.org/doc/draft-irtf-cfrg-pairing-friendly-curves/14/
+//! - https://www.rfc-editor.org/rfc/rfc9380
 //! - https://hackmd.io/@benjaminion/bls12-381
-//! - https://eips.ethereum.org/EIPS/eip-2537
-//! - https://datatracker.ietf.org/doc/draft-irtf-cfrg-pairing-friendly-curves/
 
 pub const Fp = @import("bls12_381/fp.zig").Fp;
 pub const Fp2 = @import("bls12_381/fp2.zig").Fp2;

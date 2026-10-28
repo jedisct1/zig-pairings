@@ -1,5 +1,5 @@
-//! Test vectors verifying that this implementation conforms to the IETF
-//! specification for BLS12-381.
+//! Known-answer tests for BLS12-381, taken from revision 14 of the
+//! pairing-friendly curves draft and from RFC 9380.
 
 const std = @import("std");
 const Fp = @import("fp.zig").Fp;
@@ -14,6 +14,23 @@ fn parseHex(comptime hex: []const u8) [hex.len / 2]u8 {
     var bytes: [hex.len / 2]u8 = undefined;
     _ = std.fmt.hexToBytes(&bytes, hex) catch unreachable;
     return bytes;
+}
+
+/// Build a G1 point from hex coordinates, without any check.
+fn testG1(comptime x_hex: []const u8, comptime y_hex: []const u8) !G1 {
+    return .{
+        .x = try Fp.fromBytes(parseHex(x_hex), .big),
+        .y = try Fp.fromBytes(parseHex(y_hex), .big),
+        .z = Fp.one,
+    };
+}
+
+/// Build an Fp2 element from the hex of its two coefficients.
+fn testFp2(comptime c0_hex: []const u8, comptime c1_hex: []const u8) !Fp2 {
+    return .{
+        .c0 = try Fp.fromBytes(parseHex(c0_hex), .big),
+        .c1 = try Fp.fromBytes(parseHex(c1_hex), .big),
+    };
 }
 
 // Curve parameters, as given by the IETF specification.
@@ -69,63 +86,10 @@ test "modulus matches IETF specification" {
 test "subgroup order matches IETF specification" {
     const expected: [32]u8 = parseHex(r_hex);
     try std.testing.expectEqualSlices(u8, &expected, &scalar.modulus_bytes);
-}
 
-test "G1 generator matches IETF specification" {
-    const expected_x = parseHex(g1_x_hex);
-    const expected_y = parseHex(g1_y_hex);
-
-    const g1 = G1.basePoint.affineCoordinates();
-    const actual_x = g1.x.toBytes(.big);
-    const actual_y = g1.y.toBytes(.big);
-
-    try std.testing.expectEqualSlices(u8, &expected_x, &actual_x);
-    try std.testing.expectEqualSlices(u8, &expected_y, &actual_y);
-}
-
-test "G2 generator matches IETF specification" {
-    const expected_x0 = parseHex(g2_x0_hex);
-    const expected_x1 = parseHex(g2_x1_hex);
-    const expected_y0 = parseHex(g2_y0_hex);
-    const expected_y1 = parseHex(g2_y1_hex);
-
-    const g2 = G2.basePoint.affineCoordinates();
-    const actual_x0 = g2.x.c0.toBytes(.big);
-    const actual_x1 = g2.x.c1.toBytes(.big);
-    const actual_y0 = g2.y.c0.toBytes(.big);
-    const actual_y1 = g2.y.c1.toBytes(.big);
-
-    try std.testing.expectEqualSlices(u8, &expected_x0, &actual_x0);
-    try std.testing.expectEqualSlices(u8, &expected_x1, &actual_x1);
-    try std.testing.expectEqualSlices(u8, &expected_y0, &actual_y0);
-    try std.testing.expectEqualSlices(u8, &expected_y1, &actual_y1);
-}
-
-test "curve equation b = 4 matches specification" {
-    // The specification gives E: y^2 = x^3 + 4 and E': y^2 = x^3 + 4(u + 1).
-    try std.testing.expect(G1.B.equivalent(Fp.fromInt(4)));
-    try std.testing.expect(G2.B.c0.equivalent(Fp.fromInt(4)));
-    try std.testing.expect(G2.B.c1.equivalent(Fp.fromInt(4)));
-}
-
-test "extension field tower matches specification" {
-    // The specification defines:
-    // GF(p^2) = GF(p)[u] / (u^2 + 1)
-    // GF(p^6) = GF(p^2)[v] / (v^3 - (u + 1))
-    // GF(p^12) = GF(p^6)[w] / (w^2 - v)
-
-    // Verify u^2 = -1 in Fp2.
-    const u = Fp2{ .c0 = Fp.zero, .c1 = Fp.one };
-    const u_sq = u.sq();
-    try std.testing.expect(u_sq.c0.equivalent(Fp.one.neg()));
-    try std.testing.expect(u_sq.c1.isZero());
-
-    // Verify the non-residue used to build Fp6 is (1 + u).
-    const nonres = Fp2{ .c0 = Fp.one, .c1 = Fp.one };
-    const test_val = Fp2.fromInts(3, 5);
-    const by_nonres = test_val.mulByNonresidue();
-    const direct = test_val.mul(nonres);
-    try std.testing.expect(by_nonres.equivalent(direct));
+    // The subgroup checks rely on r = t^4 - t^2 + 1.
+    const t: u256 = 0xd201000000010000;
+    try std.testing.expectEqual(t * t * t * t - t * t + 1, std.mem.readInt(u256, &scalar.modulus_bytes, .big));
 }
 
 test "pairing e(BP, BP') matches the IETF test vector" {
@@ -166,78 +130,138 @@ test "pairing e(BP, BP') matches the IETF test vector" {
     }
 }
 
-test "BLS parameter x matches specification" {
-    // The specification gives t = -2^63 - 2^62 - 2^60 - 2^57 - 2^48 - 2^16.
-    //
-    // Its absolute value is what the Miller loop iterates over.
-    const bls_x: u64 = 0xd201000000010000;
+test "Appendix D.1 point vectors" {
+    const g1_compressed = parseHex("97f1d3a73197d7942695638c4fa9ac0fc3688c4f9774b905a14e3a3f171bac586c55e83ff97a1aeffb3af00adb22c6bb");
+    const g1_uncompressed = parseHex(g1_x_hex ++ g1_y_hex);
+    const g2_compressed = parseHex("93e02b6052719f607dacd3a088274f65596bd0d09920b61ab5da61bbdc7f5049334cf11213945d57e5ac7d055d042b7e" ++
+        "024aa2b2f08f0a91260805272dc51051c6e47ad4fa403b02b4510b647ae3d1770bac0326a805bbefd48056c8c121bdb8");
+    const g2_uncompressed = parseHex(g2_x1_hex ++ g2_x0_hex ++ g2_y1_hex ++ g2_y0_hex);
 
-    const expected: u64 = (1 << 63) + (1 << 62) + (1 << 60) +
-        (1 << 57) + (1 << 48) + (1 << 16);
+    try std.testing.expectEqualSlices(u8, &g1_compressed, &G1.basePoint.toCompressed());
+    try std.testing.expectEqualSlices(u8, &g1_uncompressed, &G1.basePoint.toUncompressed());
+    try std.testing.expectEqualSlices(u8, &g2_compressed, &G2.basePoint.toCompressed());
+    try std.testing.expectEqualSlices(u8, &g2_uncompressed, &G2.basePoint.toUncompressed());
 
-    try std.testing.expectEqual(expected, bls_x);
+    try std.testing.expect((try G1.fromBytes(&g1_compressed)).equivalent(G1.basePoint));
+    try std.testing.expect((try G1.fromBytes(&g1_uncompressed)).equivalent(G1.basePoint));
+    try std.testing.expect((try G2.fromBytes(&g2_compressed)).equivalent(G2.basePoint));
+    try std.testing.expect((try G2.fromBytes(&g2_uncompressed)).equivalent(G2.basePoint));
+
+    // A compressed G2 point and an uncompressed G1 point are both 96 bytes long.
+    try std.testing.expectError(error.InvalidEncoding, G1.fromBytes(&g2_compressed));
+    try std.testing.expectError(error.InvalidEncoding, G1.fromUncompressed(g2_compressed));
+    try std.testing.expectError(error.InvalidEncoding, G2.fromBytes(&g1_uncompressed));
+    try std.testing.expectError(error.InvalidEncoding, G2.fromCompressed(g1_uncompressed));
+
+    // The identity is 0xc0 then zeros when compressed, and 0x40 then zeros
+    // when uncompressed.
+    var e_compressed: [48]u8 = @splat(0);
+    e_compressed[0] = 0xc0;
+    var e_uncompressed: [96]u8 = @splat(0);
+    e_uncompressed[0] = 0x40;
+    var e2_compressed: [96]u8 = @splat(0);
+    e2_compressed[0] = 0xc0;
+    var e2_uncompressed: [192]u8 = @splat(0);
+    e2_uncompressed[0] = 0x40;
+
+    try std.testing.expectEqualSlices(u8, &e_compressed, &G1.identityElement.toCompressed());
+    try std.testing.expectEqualSlices(u8, &e_uncompressed, &G1.identityElement.toUncompressed());
+    try std.testing.expectEqualSlices(u8, &e2_compressed, &G2.identityElement.toCompressed());
+    try std.testing.expectEqualSlices(u8, &e2_uncompressed, &G2.identityElement.toUncompressed());
+
+    try std.testing.expect((try G1.fromBytes(&e_compressed)).isIdentity());
+    try std.testing.expect((try G1.fromBytes(&e_uncompressed)).isIdentity());
+    try std.testing.expect((try G2.fromBytes(&e2_compressed)).isIdentity());
+    try std.testing.expect((try G2.fromBytes(&e2_uncompressed)).isIdentity());
+    try std.testing.expectError(error.IdentityElement, (try G1.fromBytes(&e_compressed)).rejectIdentity());
 }
 
-test "serialization format follows the specification" {
-    const g1 = G1.basePoint;
-    const compressed = g1.toCompressed();
+test "Appendix D.3 scalar vectors" {
+    const zero = parseHex("0000000000000000000000000000000000000000000000000000000000000000");
+    const one = parseHex("0000000000000000000000000000000000000000000000000000000000000001");
+    const r_minus_one = parseHex("73eda753299d7d483339d80809a1d80553bda402fffe5bfeffffffff00000000");
+    const r = parseHex(r_hex);
 
-    // Compressed, and not the point at infinity.
-    try std.testing.expect((compressed[0] & 0x80) != 0);
-    try std.testing.expect((compressed[0] & 0x40) == 0);
+    try std.testing.expect(scalar.isZero(try scalar.fromBytes(zero, .big)));
+    try std.testing.expectEqualSlices(u8, &one, &try scalar.fromBytes(one, .big));
+    try std.testing.expectEqualSlices(u8, &r_minus_one, &try scalar.fromBytes(r_minus_one, .big));
+    try std.testing.expectError(error.NonCanonical, scalar.fromBytes(r, .big));
+    try std.testing.expectError(error.NonCanonical, scalar.fromBytes(@splat(0xff), .big));
 
-    const decompressed = try G1.fromCompressed(compressed);
-    try std.testing.expect(g1.equivalent(decompressed));
-
-    const g2 = G2.basePoint;
-    const g2_compressed = g2.toCompressed();
-
-    try std.testing.expect((g2_compressed[0] & 0x80) != 0);
-    try std.testing.expect((g2_compressed[0] & 0x40) == 0);
-
-    const g2_decompressed = try G2.fromCompressed(g2_compressed);
-    try std.testing.expect(g2.equivalent(g2_decompressed));
+    // Scalars are big-endian: read as little-endian, the encoding of 1 is 2^248.
+    try std.testing.expectEqualSlices(u8, &one, &scalar.toBytes(one, .big));
+    try std.testing.expect(!std.mem.eql(u8, &one, &try scalar.fromBytes(one, .little)));
 }
 
-test "compressed base points match the reference vectors" {
-    const g1_compressed = "97f1d3a73197d7942695638c4fa9ac0fc3688c4f9774b905a14e3a3f171bac586c55e83ff97a1aeffb3af00adb22c6bb";
-    const g2_compressed =
-        "93e02b6052719f607dacd3a088274f65596bd0d09920b61ab5da61bbdc7f5049" ++
-        "334cf11213945d57e5ac7d055d042b7e024aa2b2f08f0a91260805272dc51051" ++
-        "c6e47ad4fa403b02b4510b647ae3d1770bac0326a805bbefd48056c8c121bdb8";
-
-    try std.testing.expectEqualSlices(u8, &parseHex(g1_compressed), &G1.basePoint.toCompressed());
-    try std.testing.expectEqualSlices(u8, &parseHex(g2_compressed), &G2.basePoint.toCompressed());
-
-    // The encodings round-trip back to the base points.
-    try std.testing.expect((try G1.fromCompressed(parseHex(g1_compressed))).equivalent(G1.basePoint));
-    try std.testing.expect((try G2.fromCompressed(parseHex(g2_compressed))).equivalent(G2.basePoint));
-}
-
-test "identity serialization follows the specification" {
-    const id = G1.identityElement;
-    const compressed = id.toCompressed();
-
-    // Compressed, and flagged as the point at infinity.
-    try std.testing.expect((compressed[0] & 0x80) != 0);
-    try std.testing.expect((compressed[0] & 0x40) != 0);
-    for (compressed[1..]) |b| {
-        try std.testing.expect(b == 0);
+test "RFC 9380 G1 cofactor clearing" {
+    // Q0, Q1 and P = clear_cofactor(Q0 + Q1) for msg = "" and "abc", from RFC 9380, Appendix J.9.1.
+    const vectors = [_][6][]const u8{
+        .{
+            "11a3cce7e1d90975990066b2f2643b9540fa40d6137780df4e753a8054d07580db3b7f1f03396333d4a359d1fe3766fe",
+            "0eeaf6d794e479e270da10fdaf768db4c96b650a74518fc67b04b03927754bac66f3ac720404f339ecdcc028afa091b7",
+            "160003aaf1632b13396dbad518effa00fff532f604de1a7fc2082ff4cb0afa2d63b2c32da1bef2bf6c5ca62dc6b72f9c",
+            "0d8bb2d14e20cf9f6036152ed386d79189415b6d015a20133acb4e019139b94e9c146aaad5817f866c95d609a361735e",
+            "052926add2207b76ca4fa57a8734416c8dc95e24501772c814278700eed6d1e4e8cf62d9c09db0fac349612b759e79a1",
+            "08ba738453bfed09cb546dbb0783dbb3a5f1f566ed67bb6be0e8c67e2e81a4cc68ee29813bb7994998f3eae0c9c6a265",
+        },
+        .{
+            "125435adce8e1cbd1c803e7123f45392dc6e326d292499c2c45c5865985fd74fe8f042ecdeeec5ecac80680d04317d80",
+            "0e8828948c989126595ee30e4f7c931cbd6f4570735624fd25aef2fa41d3f79cfb4b4ee7b7e55a8ce013af2a5ba20bf2",
+            "11def93719829ecda3b46aa8c31fc3ac9c34b428982b898369608e4f042babee6c77ab9218aad5c87ba785481eff8ae4",
+            "0007c9cef122ccf2efd233d6eb9bfc680aa276652b0661f4f820a653cec1db7ff69899f8e52b8e92b025a12c822a6ce6",
+            "03567bc5ef9c690c2ab2ecdf6a96ef1c139cc0b2f284dca0a9a7943388a49a3aee664ba5379a7655d3c68900be2f6903",
+            "0b9c15f3fe6e5cf4211f346271d7b01c8f3b28be689c8429c85b67af215533311f0b8dfaaa154fa6b88176c229f2885d",
+        },
+    };
+    inline for (vectors) |v| {
+        const q0 = try testG1(v[0], v[1]);
+        const q1 = try testG1(v[2], v[3]);
+        const expected = try testG1(v[4], v[5]);
+        const p = q0.add(q1).clearCofactor();
+        try std.testing.expect(p.equivalent(expected));
+        try std.testing.expect(p.isInSubgroup());
     }
-    try std.testing.expect((compressed[0] & 0x1f) == 0);
 }
 
-test "Fp2 serialization order (c1 || c0 for big endian)" {
-    // The specification serializes x_0 + x_1*u as x_1 followed by x_0.
-    const elem = Fp2.fromInts(123, 456);
-    const bytes = elem.toBytes(.big);
-
-    const c1_bytes = elem.c1.toBytes(.big);
-    const c0_bytes = elem.c0.toBytes(.big);
-
-    try std.testing.expectEqualSlices(u8, &c1_bytes, bytes[0..48]);
-    try std.testing.expectEqualSlices(u8, &c0_bytes, bytes[48..96]);
-
-    const parsed = try Fp2.fromBytes(bytes, .big);
-    try std.testing.expect(parsed.equivalent(elem));
+test "RFC 9380 G2 cofactor clearing" {
+    // Q0, Q1 and P = clear_cofactor(Q0 + Q1) for msg = "" and "abc", from RFC 9380, Appendix J.10.1.
+    // Each coordinate is given as c0, then c1.
+    const vectors = [_][12][]const u8{
+        .{
+            "019ad3fc9c72425a998d7ab1ea0e646a1f6093444fc6965f1cad5a3195a7b1e099c050d57f45e3fa191cc6d75ed7458c",
+            "171c88b0b0efb5eb2b88913a9e74fe111a4f68867b59db252ce5868af4d1254bfab77ebde5d61cd1a86fb2fe4a5a1c1d",
+            "0ba10604e62bdd9eeeb4156652066167b72c8d743b050fb4c1016c31b505129374f76e03fa127d6a156213576910fef3",
+            "0eb22c7a543d3d376e9716a49b72e79a89c9bfe9feee8533ed931cbb5373dde1fbcd7411d8052e02693654f71e15410a",
+            "113d2b9cd4bd98aee53470b27abc658d91b47a78a51584f3d4b950677cfb8a3e99c24222c406128c91296ef6b45608be",
+            "13855912321c5cb793e9d1e88f6f8d342d49c0b0dbac613ee9e17e3c0b3c97dfbb5a49cc3fb45102fdbaf65e0efe2632",
+            "0fd3def0b7574a1d801be44fde617162aa2e89da47f464317d9bb5abc3a7071763ce74180883ad7ad9a723a9afafcdca",
+            "056f617902b3c0d0f78a9a8cbda43a26b65f602f8786540b9469b060db7b38417915b413ca65f875c130bebfaa59790c",
+            "0141ebfbdca40eb85b87142e130ab689c673cf60f1a3e98d69335266f30d9b8d4ac44c1038e9dcdd5393faf5c41fb78a",
+            "05cb8437535e20ecffaef7752baddf98034139c38452458baeefab379ba13dff5bf5dd71b72418717047f5b0f37da03d",
+            "0503921d7f6a12805e72940b963c0cf3471c7b2a524950ca195d11062ee75ec076daf2d4bc358c4b190c0c98064fdd92",
+            "12424ac32561493f3fe3c260708a12b7c620e7be00099a974e259ddc7d1f6395c3c811cdd19f1e8dbf3e9ecfdcbab8d6",
+        },
+        .{
+            "12b2e525281b5f4d2276954e84ac4f42cf4e13b6ac4228624e17760faf94ce5706d53f0ca1952f1c5ef75239aeed55ad",
+            "05d8a724db78e570e34100c0bc4a5fa84ad5839359b40398151f37cff5a51de945c563463c9efbdda569850ee5a53e77",
+            "02eacdc556d0bdb5d18d22f23dcb086dd106cad713777c7e6407943edbe0b3d1efe391eedf11e977fac55f9b94f2489c",
+            "04bbe48bfd5814648d0b9e30f0717b34015d45a861425fabc1ee06fdfce36384ae2c808185e693ae97dcde118f34de41",
+            "19f18cc5ec0c2f055e47c802acc3b0e40c337256a208001dde14b25afced146f37ea3d3ce16834c78175b3ed61f3c537",
+            "15b0dadc256a258b4c68ea43605dffa6d312eef215c19e6474b3e101d33b661dfee43b51abbf96fee68fc6043ac56a58",
+            "05e47c1781286e61c7ade887512bd9c2cb9f640d3be9cf87ea0bad24bd0ebfe946497b48a581ab6c7d4ca74b5147287f",
+            "19f98db2f4a1fcdf56a9ced7b320ea9deecf57c8e59236b0dc21f6ee7229aa9705ce9ac7fe7a31c72edca0d92370c096",
+            "02c2d18e033b960562aae3cab37a27ce00d80ccd5ba4b7fe0e7a210245129dbec7780ccc7954725f4168aff2787776e6",
+            "139cddbccdc5e91b9623efd38c49f81a6f83f175e80b06fc374de9eb4b41dfe4ca3a230ed250fbe3a2acf73a41177fd8",
+            "1787327b68159716a37440985269cf584bcb1e621d3a7202be6ea05c4cfe244aeb197642555a0645fb87bf7466b2ba48",
+            "00aa65dae3c8d732d10ecd2c50f8a1baf3001578f71c694e03866e9f3d49ac1e1ce70dd94a733534f106d4cec0eddd16",
+        },
+    };
+    inline for (vectors) |v| {
+        const q0 = G2{ .x = try testFp2(v[0], v[1]), .y = try testFp2(v[2], v[3]), .z = Fp2.one };
+        const q1 = G2{ .x = try testFp2(v[4], v[5]), .y = try testFp2(v[6], v[7]), .z = Fp2.one };
+        const expected = G2{ .x = try testFp2(v[8], v[9]), .y = try testFp2(v[10], v[11]), .z = Fp2.one };
+        const p = q0.add(q1).clearCofactor();
+        try std.testing.expect(p.equivalent(expected));
+        try std.testing.expect(p.isInSubgroup());
+    }
 }

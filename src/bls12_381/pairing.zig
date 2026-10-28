@@ -1,6 +1,6 @@
 //! Optimal Ate pairing for BLS12-381.
 //!
-//! Computes the bilinear pairing e: G1 × G2 → GT.
+//! Computes the bilinear pairing e: G1 x G2 -> GT.
 
 const std = @import("std");
 const Fp2 = @import("fp2.zig").Fp2;
@@ -14,6 +14,12 @@ const G2Affine = @import("g2.zig").AffineCoordinates;
 pub const GT = Fp12;
 
 /// Compute the optimal Ate pairing e(P, Q).
+///
+/// The result matches the test vectors of the draft, without the extra
+/// exponent some other libraries apply.
+///
+/// Both points must be in their groups, which is always the case for decoded
+/// points.
 pub fn pair(p: G1, q: G2) GT {
     if (p.isIdentity() or q.isIdentity()) {
         return GT.one;
@@ -60,7 +66,7 @@ pub fn pairingCheck(pairs: []const struct { p: G1, q: G2 }) bool {
 ///
 /// Because it is negative, the loop starts from -Q and subtracts at every set
 /// bit rather than adding.
-pub fn millerLoop(p: G1Affine, q: G2Affine) Fp12 {
+fn millerLoop(p: G1Affine, q: G2Affine) Fp12 {
     var r = G2{ .x = q.x, .y = q.y.neg(), .z = Fp2.one };
     const q_neg = G2Affine{ .x = q.x, .y = q.y.neg() };
 
@@ -180,84 +186,27 @@ fn additionStep(r: *G2, q: G2Affine) LineCoeffs {
     return .{ .c0 = c0, .c1 = c1, .c2 = c2 };
 }
 
-test "first ell application" {
-    const g1 = G1.basePoint;
-    const g2 = G2.basePoint;
-    const p_affine = g1.affineCoordinates();
-    const q_affine = g2.affineCoordinates();
-
-    var r = G2{ .x = q_affine.x, .y = q_affine.y, .z = Fp2.one };
-
-    const dbl = doublingStep(&r);
-
-    var f = Fp12.one;
-    f = ell(f, dbl, p_affine);
-
-    try std.testing.expect(!f.isOne());
-}
-
-test "pairing bilinearity" {
-    const g1 = G1.basePoint;
-    const g2 = G2.basePoint;
-
-    const result = pair(g1, g2);
-    try std.testing.expect(!result.isOne());
-}
-
 test "miller loop output" {
-    const g1 = G1.basePoint;
-    const g2 = G2.basePoint;
-    const q_affine = g2.affineCoordinates();
-    const p_affine = g1.affineCoordinates();
+    const f = millerLoop(G1.basePoint.affineCoordinates(), G2.basePoint.affineCoordinates());
 
-    const f = millerLoop(p_affine, q_affine);
-
-    // Known-answer value for the Miller loop, before final exponentiation.
-    const expected_c0_c0_hex = "05194f5785436c8debf0eb2bab4c6ef3de7dc0633c85769173777b782bf897fa45025fd03e7be941123c4ee19910e62e";
-    const actual_c0_c0_hex = std.fmt.bytesToHex(f.c0.c0.c0.toBytes(.big), .lower);
-    try std.testing.expectEqualStrings(expected_c0_c0_hex, &actual_c0_c0_hex);
-
-    const final_result = f.finalExponentiation();
-    const expected_final_prefix = "11619b45f61edfe3";
-    const final_hex = std.fmt.bytesToHex(final_result.c0.c0.c0.toBytes(.big), .lower);
-    try std.testing.expectEqualStrings(expected_final_prefix, final_hex[0..16]);
+    // Checked before the final exponentiation, which the Appendix C vector already covers.
+    const expected = "05194f5785436c8debf0eb2bab4c6ef3de7dc0633c85769173777b782bf897fa45025fd03e7be941123c4ee19910e62e";
+    try std.testing.expectEqualStrings(expected, &std.fmt.bytesToHex(f.c0.c0.c0.toBytes(.big), .lower));
 }
 
 test "pairing with identity" {
-    const g1 = G1.basePoint;
-    const g2 = G2.basePoint;
-
-    // e(O, Q) = 1
-    const result1 = pair(G1.identityElement, g2);
-    try std.testing.expect(result1.isOne());
-
-    // e(P, O) = 1
-    const result2 = pair(g1, G2.identityElement);
-    try std.testing.expect(result2.isOne());
+    try std.testing.expect(pair(G1.identityElement, G2.basePoint).isOne());
+    try std.testing.expect(pair(G1.basePoint, G2.identityElement).isOne());
 }
 
-test "pairing bilinearity - scalar" {
-    // e(2P, Q) = e(P, Q)²
-    const g1 = G1.basePoint;
-    const g2 = G2.basePoint;
-    const two_g1 = g1.dbl();
+test "pairing bilinearity" {
+    const p = G1.basePoint;
+    const q = G2.basePoint;
+    const e = pair(p, q);
+    const e_squared = e.mul(e);
 
-    const e_2p_q = pair(two_g1, g2);
-    const e_p_q = pair(g1, g2);
-    const e_p_q_sq = e_p_q.mul(e_p_q);
-
-    try std.testing.expect(e_2p_q.equivalent(e_p_q_sq));
-}
-
-test "pairing negation" {
-    // e(-P, Q) * e(P, Q) = 1
-    const g1 = G1.basePoint;
-    const g2 = G2.basePoint;
-    const neg_g1 = g1.neg();
-
-    const e1 = pair(neg_g1, g2);
-    const e2 = pair(g1, g2);
-    const product = e1.mul(e2);
-
-    try std.testing.expect(product.isOne());
+    try std.testing.expect(pair(p.dbl(), q).equivalent(e_squared));
+    try std.testing.expect(pair(p, q.dbl()).equivalent(e_squared));
+    try std.testing.expect(pair(p.neg(), q).mul(e).isOne());
+    try std.testing.expect(pair(p, q.neg()).mul(e).isOne());
 }

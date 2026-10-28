@@ -78,29 +78,10 @@ fn limbsToBytes(limbs: [limbs_count]u64) CompressedScalar {
     return result;
 }
 
-/// Reduce a scalar modulo r if necessary.
+/// Reduce any 58-byte value modulo r.
 pub fn reduce(s: CompressedScalar) CompressedScalar {
-    var limbs = bytesToLimbs(s);
-
-    var borrow: u1 = 0;
-    inline for (0..limbs_count) |i| {
-        const result = @subWithOverflow(limbs[i], modulus[i]);
-        const result2 = @subWithOverflow(result[0], borrow);
-        borrow = result[1] | result2[1];
-    }
-
-    // No borrow means the value is >= r, so subtract r once.
-    if (borrow == 0) {
-        borrow = 0;
-        inline for (0..limbs_count) |i| {
-            const result = @subWithOverflow(limbs[i], modulus[i]);
-            const result2 = @subWithOverflow(result[0], borrow);
-            limbs[i] = result2[0];
-            borrow = result[1] | result2[1];
-        }
-    }
-
-    return limbsToBytes(limbs);
+    const limbs = bytesToLimbs(s);
+    return limbsToBytes(reduceLimbs(limbs_count, &limbs));
 }
 
 /// Add two scalars modulo r.
@@ -117,22 +98,7 @@ pub fn add(a: CompressedScalar, b: CompressedScalar) CompressedScalar {
         carry = sum1[1] | sum2[1];
     }
 
-    var borrow: u1 = 0;
-    var reduced: [limbs_count]u64 = undefined;
-    inline for (0..limbs_count) |i| {
-        const diff1 = @subWithOverflow(result[i], modulus[i]);
-        const diff2 = @subWithOverflow(diff1[0], borrow);
-        reduced[i] = diff2[0];
-        borrow = diff1[1] | diff2[1];
-    }
-
-    // Use the reduced value when the sum overflowed or did not go below r.
-    const use_reduced = @intFromBool(carry == 1) | (1 - borrow);
-    const mask: u64 = 0 -% @as(u64, use_reduced);
-
-    inline for (0..limbs_count) |i| {
-        result[i] = (mask & reduced[i]) | (~mask & result[i]);
-    }
+    result = subtractModulusIfNecessary(result, carry);
 
     return limbsToBytes(result);
 }
@@ -151,15 +117,14 @@ pub fn sub(a: CompressedScalar, b: CompressedScalar) CompressedScalar {
         borrow = diff1[1] | diff2[1];
     }
 
-    // A borrow means the result went negative, so add r back.
-    if (borrow == 1) {
-        var c: u1 = 0;
-        inline for (0..limbs_count) |i| {
-            const sum1 = @addWithOverflow(result[i], modulus[i]);
-            const sum2 = @addWithOverflow(sum1[0], c);
-            result[i] = sum2[0];
-            c = sum1[1] | sum2[1];
-        }
+    // Add r back if the subtraction borrowed, without branching.
+    const mask: u64 = 0 -% @as(u64, borrow);
+    var carry: u1 = 0;
+    inline for (0..limbs_count) |i| {
+        const sum1 = @addWithOverflow(result[i], modulus[i] & mask);
+        const sum2 = @addWithOverflow(sum1[0], carry);
+        result[i] = sum2[0];
+        carry = sum1[1] | sum2[1];
     }
 
     return limbsToBytes(result);
@@ -187,56 +152,60 @@ pub fn mul(a: CompressedScalar, b: CompressedScalar) CompressedScalar {
         t[i + limbs_count] = carry;
     }
 
-    const result = barrettReduce(&t);
+    const result = reduceLimbs(limbs_count * 2, &t);
 
     return limbsToBytes(result);
 }
 
-/// Reduce modulo r by repeated subtraction of r.
-fn barrettReduce(t: *const [limbs_count * 2]u64) [limbs_count]u64 {
+/// Reduce an integer of any width modulo r, in constant time.
+fn reduceLimbs(comptime n: usize, t: *const [n]u64) [limbs_count]u64 {
+    var acc: [limbs_count]u64 = @splat(0);
+    var i: usize = n * 64;
+    while (i > 0) {
+        i -= 1;
+        // acc < r, so doubling it can't overflow.
+        var carry: u64 = (t[i / 64] >> @intCast(i % 64)) & 1;
+        inline for (0..limbs_count) |j| {
+            const next = acc[j] >> 63;
+            acc[j] = (acc[j] << 1) | carry;
+            carry = next;
+        }
+        acc = subtractModulusIfNecessary(acc, 0);
+    }
+    return acc;
+}
+
+/// Subtract r once if the value, with its carry bit, is at least r, in constant time.
+fn subtractModulusIfNecessary(limbs: [limbs_count]u64, carry: u1) [limbs_count]u64 {
+    var diff: [limbs_count]u64 = undefined;
+    var borrow: u1 = 0;
+    inline for (0..limbs_count) |j| {
+        const diff1 = @subWithOverflow(limbs[j], modulus[j]);
+        const diff2 = @subWithOverflow(diff1[0], borrow);
+        diff[j] = diff2[0];
+        borrow = diff1[1] | diff2[1];
+    }
+
+    const keep_diff: u64 = 0 -% @as(u64, carry | (1 - borrow));
     var result: [limbs_count]u64 = undefined;
-    inline for (0..limbs_count) |i| {
-        result[i] = t[i];
+    inline for (0..limbs_count) |j| {
+        result[j] = (diff[j] & keep_diff) | (limbs[j] & ~keep_diff);
     }
-
-    while (true) {
-        var borrow: u1 = 0;
-        var reduced: [limbs_count]u64 = undefined;
-        inline for (0..limbs_count) |i| {
-            const diff1 = @subWithOverflow(result[i], modulus[i]);
-            const diff2 = @subWithOverflow(diff1[0], borrow);
-            reduced[i] = diff2[0];
-            borrow = diff1[1] | diff2[1];
-        }
-
-        if (borrow == 1) {
-            break;
-        }
-        result = reduced;
-    }
-
     return result;
 }
 
-/// Generate a random scalar.
+/// Generate a uniformly random nonzero scalar.
 pub fn random(io: std.Io, comptime endian: std.builtin.Endian) CompressedScalar {
-    var bytes: CompressedScalar = undefined;
-    io.random(&bytes);
-
-    // Clear the top bits so the value is below 2r; reduce() then brings it below r.
-    if (endian == .big) {
-        bytes[0] &= 0x00;
-        bytes[1] &= 0x24;
-    } else {
-        bytes[57] &= 0x00;
-        bytes[56] &= 0x24;
+    // Rejection sampling keeps the result uniform.
+    const top_byte_mask: u8 = 0xff >> @clz(modulus_bytes[0]);
+    while (true) {
+        var s: CompressedScalar = undefined;
+        io.random(&s);
+        s[0] &= top_byte_mask;
+        rejectNonCanonical(s) catch continue;
+        if (isZero(s)) continue;
+        return toBytes(s, endian);
     }
-
-    return reduce(if (endian == .big) bytes else blk: {
-        var swapped: CompressedScalar = undefined;
-        for (bytes, 0..) |byte, i| swapped[57 - i] = byte;
-        break :blk swapped;
-    });
 }
 
 /// Check if scalar is zero.
@@ -266,34 +235,40 @@ pub fn toBytes(s: CompressedScalar, endian: std.builtin.Endian) CompressedScalar
 }
 
 test "scalar arithmetic" {
-    const a: CompressedScalar = blk: {
-        var bytes: CompressedScalar = @splat(0);
-        bytes[57] = 0x07;
-        break :blk bytes;
-    };
-    const b: CompressedScalar = blk: {
-        var bytes: CompressedScalar = @splat(0);
-        bytes[57] = 0x0b;
-        break :blk bytes;
-    };
+    const zero: CompressedScalar = @splat(0);
+    var one = zero;
+    one[one.len - 1] = 1;
+    var seven = zero;
+    seven[seven.len - 1] = 7;
+    var eleven = zero;
+    eleven[eleven.len - 1] = 11;
 
-    // 7 + 11 = 18
-    const sum = add(a, b);
-    try std.testing.expectEqual(0x12, sum[57]);
+    try std.testing.expectEqual(18, add(seven, eleven)[zero.len - 1]);
+    try std.testing.expectEqual(4, sub(eleven, seven)[zero.len - 1]);
+    try std.testing.expectEqual(77, mul(seven, eleven)[zero.len - 1]);
 
-    // 11 - 7 = 4
-    const diff = sub(b, a);
-    try std.testing.expectEqual(0x04, diff[57]);
+    const r_minus_one = sub(zero, one);
+    try std.testing.expectEqualSlices(u8, &sub(modulus_bytes, one), &r_minus_one);
+    try std.testing.expect(isZero(add(r_minus_one, one)));
+    try std.testing.expectEqualSlices(u8, &one, &mul(r_minus_one, r_minus_one));
 
-    // 7 * 11 = 77
-    const prod = mul(a, b);
-    try std.testing.expectEqual(0x4d, prod[57]);
+    // Expected product computed with Python.
+    var a: CompressedScalar = undefined;
+    for (&a, 1..) |*byte, i| byte.* = @intCast(i);
+    var b: CompressedScalar = undefined;
+    _ = try std.fmt.hexToBytes(&b, "1592a6ce9d209aa2adacafaecdac77cfd64db88eb1b0b3b2ba5c757c7e31b3b2a584878681a485e69b9cb32eaa888b8a9594078fd17113509d68");
+    var expected: CompressedScalar = undefined;
+    _ = try std.fmt.hexToBytes(&expected, "10426de032f043d48a50958b5ad85e514ffb2c948f9e96dfc7f14559a4bacf4b2ac70949b3863d12cd687d35e5547baaf65bd18c8f2b89d65989");
+    try std.testing.expectEqualSlices(u8, &expected, &mul(reduce(a), b));
 }
 
 test "scalar reduction" {
-    const s = modulus_bytes;
-    const reduced = reduce(s);
-    try std.testing.expect(isZero(reduced));
+    try std.testing.expect(isZero(reduce(modulus_bytes)));
+
+    // 2^464 - 1 is about 7r. Expected value computed with Python.
+    var expected: CompressedScalar = undefined;
+    _ = try std.fmt.hexToBytes(&expected, "03e07e85f81ff040000000003f06a540f90bc179fffffffffa177e0c17d3b1f238000000003f042f189c3e5839bfffffffff03f42fc8df8c7fa4");
+    try std.testing.expectEqualSlices(u8, &expected, &reduce(@splat(0xff)));
 }
 
 test "random scalar" {

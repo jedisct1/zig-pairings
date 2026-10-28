@@ -1,8 +1,9 @@
 //! G2 group for BLS12-381.
 //!
-//! G2 is the group of points on the twisted curve E'(Fp2): y^2 = x^3 + 4(1 + u)
+//! G2 is the subgroup of order r of the twisted curve E'(Fp2): y^2 = x^3 + 4(1 + u).
+//! The specification calls it G'_2.
 //!
-//! This is a subgroup of order r of the full curve.
+//! Points decoded from bytes or coordinates are always checked to be in G2.
 
 const std = @import("std");
 const crypto = std.crypto;
@@ -15,13 +16,11 @@ const IdentityElementError = crypto.errors.IdentityElementError;
 const NonCanonicalError = crypto.errors.NonCanonicalError;
 const NotSquareError = crypto.errors.NotSquareError;
 
-/// G2 point in projective coordinates.
+/// G2 point in projective coordinates (X, Y, Z) where x = X/Z, y = Y/Z.
 pub const G2 = struct {
     x: Fp2,
     y: Fp2,
     z: Fp2,
-
-    is_base: bool = false,
 
     /// Curve coefficient b' = 4(1 + u) for the twisted curve.
     pub const B = Fp2{
@@ -80,7 +79,6 @@ pub const G2 = struct {
             },
         },
         .z = Fp2.one,
-        .is_base = true,
     };
 
     /// The identity element (point at infinity).
@@ -92,26 +90,47 @@ pub const G2 = struct {
     /// Uncompressed point encoding size.
     pub const uncompressed_length = 192;
 
-    /// Create a point from affine coordinates, checking it's on the curve.
+    /// Create a point from affine coordinates, checking that it is in G2.
+    ///
+    /// `AffineCoordinates.identityElement` gives the identity element.
     pub fn fromAffineCoordinates(affine: AffineCoordinates) EncodingError!G2 {
-        const x = affine.x;
-        const y = affine.y;
+        if (affine.x.isZero() and affine.y.isZero()) {
+            return identityElement;
+        }
+        return fromCoordinates(affine.x, affine.y);
+    }
 
-        const x3 = x.sq().mul(x);
-        const y2 = y.sq();
-        const rhs = x3.add(B);
-
-        if (!y2.equivalent(rhs)) {
+    /// Build a point from its coordinates, checking that it is in G2.
+    fn fromCoordinates(x: Fp2, y: Fp2) EncodingError!G2 {
+        const p = G2{ .x = x, .y = y, .z = Fp2.one };
+        if (!p.isInSubgroup()) {
             return error.InvalidEncoding;
         }
+        return p;
+    }
 
-        return G2{ .x = x, .y = y, .z = Fp2.one };
+    /// Deserialize a point in either form, like octets_to_point_G2 in the specification.
+    ///
+    /// The compression bit must match the length, so that an uncompressed G1
+    /// point, which is also 96 bytes long, is not read as a G2 point.
+    pub fn fromBytes(bytes: []const u8) (EncodingError || NotSquareError || NonCanonicalError)!G2 {
+        if (bytes.len == 0) {
+            return error.InvalidEncoding;
+        }
+        if ((bytes[0] & 0x80) != 0) {
+            if (bytes.len != compressed_length) return error.InvalidEncoding;
+            return fromCompressed(bytes[0..compressed_length].*);
+        }
+        if (bytes.len != uncompressed_length) return error.InvalidEncoding;
+        return fromUncompressed(bytes[0..uncompressed_length].*);
     }
 
     /// Deserialize from compressed form.
     ///
     /// The encoding is the x-coordinate with flags in the top three bits,
-    /// laid out the same way as for G1.
+    /// laid out the same way as for G1, with the sign given by sign_GF_p^2.
+    ///
+    /// The point is checked to be in G2.
     pub fn fromCompressed(bytes: [compressed_length]u8) (EncodingError || NotSquareError || NonCanonicalError)!G2 {
         const flags = bytes[0] >> 5;
         const is_compressed = (flags & 0b100) != 0;
@@ -153,7 +172,7 @@ pub const G2 = struct {
             y = y.neg();
         }
 
-        return G2{ .x = x, .y = y, .z = Fp2.one };
+        return fromCoordinates(x, y);
     }
 
     /// Serialize to compressed form.
@@ -176,6 +195,8 @@ pub const G2 = struct {
     }
 
     /// Deserialize from uncompressed form.
+    ///
+    /// The point is checked to be in G2.
     pub fn fromUncompressed(bytes: [uncompressed_length]u8) (EncodingError || NonCanonicalError)!G2 {
         const flags = bytes[0] >> 5;
         const is_compressed = (flags & 0b100) != 0;
@@ -210,7 +231,7 @@ pub const G2 = struct {
         const x = try Fp2.fromBytes(x_bytes, .big);
         const y = try Fp2.fromBytes(bytes[96..192].*, .big);
 
-        return fromAffineCoordinates(.{ .x = x, .y = y });
+        return fromCoordinates(x, y);
     }
 
     /// Serialize to uncompressed form.
@@ -237,6 +258,9 @@ pub const G2 = struct {
     }
 
     /// Reject the identity element.
+    ///
+    /// Decoding accepts the identity, so protocols that don't want it should
+    /// call this on the result.
     pub fn rejectIdentity(p: G2) IdentityElementError!void {
         if (p.isIdentity()) {
             return error.IdentityElement;
@@ -273,6 +297,13 @@ pub const G2 = struct {
         p.z.cMov(q.z, choice);
     }
 
+    /// Swap two points when `choice` is 1 (constant-time).
+    fn cSwap(p: *G2, q: *G2, choice: u1) void {
+        const t = p.*;
+        p.cMov(q.*, choice);
+        q.cMov(t, choice);
+    }
+
     /// Negate the point.
     pub fn neg(p: G2) G2 {
         return .{
@@ -282,48 +313,58 @@ pub const G2 = struct {
         };
     }
 
+    /// Multiply by 3b' = 12(1 + u).
+    fn mulByB3(x: Fp2) Fp2 {
+        const sum = x.c0.add(x.c1);
+        const diff = x.c0.sub(x.c1);
+        return .{
+            .c0 = diff.dbl().add(diff).dbl().dbl(),
+            .c1 = sum.dbl().add(sum).dbl().dbl(),
+        };
+    }
+
     /// Double a point.
+    ///
+    /// Algorithm 9 from https://eprint.iacr.org/2015/1060.
     pub fn dbl(p: G2) G2 {
-        return addGeneral(p, p);
-    }
+        var t0 = p.y.sq();
+        var z3 = t0.dbl().dbl().dbl();
+        var t1 = p.y.mul(p.z);
+        var t2 = mulByB3(p.z.sq());
+        var x3 = t2.mul(z3);
+        var y3 = t0.add(t2);
+        z3 = t1.mul(z3);
+        t1 = t2.dbl();
+        t2 = t1.add(t2);
+        t0 = t0.sub(t2);
+        y3 = t0.mul(y3).add(x3);
+        t1 = p.x.mul(p.y);
+        x3 = t0.mul(t1).dbl();
 
-    /// General point addition that also handles P + P (doubling).
-    fn addGeneral(p: G2, q: G2) G2 {
-        if (p.isIdentity()) return q;
-        if (q.isIdentity()) return p;
-
-        // Working in affine coordinates keeps the special cases easy to spot.
-        const a = p.affineCoordinates();
-        const b = q.affineCoordinates();
-
-        if (a.x.equivalent(b.x)) {
-            if (a.y.equivalent(b.y)) {
-                return dblAffine(a);
-            } else {
-                return identityElement;
-            }
-        }
-
-        const lambda = b.y.sub(a.y).mul(b.x.sub(a.x).invert());
-        const x3 = lambda.sq().sub(a.x).sub(b.x);
-        const y3 = lambda.mul(a.x.sub(x3)).sub(a.y);
-
-        return G2{ .x = x3, .y = y3, .z = Fp2.one };
-    }
-
-    /// Affine doubling formula.
-    fn dblAffine(p: AffineCoordinates) G2 {
-        const xx = p.x.sq();
-        const lambda = xx.add(xx).add(xx).mul(p.y.dbl().invert());
-        const x3 = lambda.sq().sub(p.x.dbl());
-        const y3 = lambda.mul(p.x.sub(x3)).sub(p.y);
-
-        return G2{ .x = x3, .y = y3, .z = Fp2.one };
+        return .{ .x = x3, .y = y3, .z = z3 };
     }
 
     /// Add two points.
+    ///
+    /// Algorithm 7 from https://eprint.iacr.org/2015/1060, which works for any
+    /// two points, including equal points and the identity.
     pub fn add(p: G2, q: G2) G2 {
-        return addGeneral(p, q);
+        var t0 = p.x.mul(q.x);
+        var t1 = p.y.mul(q.y);
+        var t2 = p.z.mul(q.z);
+        const t3 = p.x.add(p.y).mul(q.x.add(q.y)).sub(t0.add(t1));
+        const t4 = p.y.add(p.z).mul(q.y.add(q.z)).sub(t1.add(t2));
+        var y3 = p.x.add(p.z).mul(q.x.add(q.z)).sub(t0.add(t2));
+        t0 = t0.dbl().add(t0);
+        t2 = mulByB3(t2);
+        var z3 = t1.add(t2);
+        t1 = t1.sub(t2);
+        y3 = mulByB3(y3);
+        const x3 = t3.mul(t1).sub(t4.mul(y3));
+        y3 = t1.mul(z3).add(y3.mul(t0));
+        z3 = z3.mul(t4).add(t0.mul(t3));
+
+        return .{ .x = x3, .y = y3, .z = z3 };
     }
 
     /// Subtract two points.
@@ -331,129 +372,109 @@ pub const G2 = struct {
         return p.add(q.neg());
     }
 
-    /// Add a point in affine coordinates.
-    pub fn addMixed(p: G2, q: AffineCoordinates) G2 {
-        return p.add(G2{ .x = q.x, .y = q.y, .z = Fp2.one });
-    }
+    /// Multiply a point by a scalar, in constant time.
+    ///
+    /// The scalar doesn't have to be reduced, and zero gives the identity.
+    pub fn mul(p: G2, scalar_bytes: [scalar.encoded_length]u8, endian: std.builtin.Endian) G2 {
+        var s = scalar_bytes;
+        if (endian == .little) std.mem.reverse(u8, &s);
 
-    /// Subtract a point in affine coordinates.
-    pub fn subMixed(p: G2, q: AffineCoordinates) G2 {
-        return p.add(G2{ .x = q.x, .y = q.y.neg(), .z = Fp2.one });
-    }
-
-    /// Scalar multiplication.
-    pub fn mul(p: G2, scalar_bytes: [32]u8, endian: std.builtin.Endian) IdentityElementError!G2 {
-        const s = if (endian == .little) scalar_bytes else blk: {
-            var swapped: [32]u8 = undefined;
-            for (scalar_bytes, 0..) |b, i| swapped[31 - i] = b;
-            break :blk swapped;
-        };
-
-        var result = identityElement;
-        var temp = p;
-
+        var r0 = identityElement;
+        var r1 = p;
         for (s) |byte| {
-            var b = byte;
-            for (0..8) |_| {
-                if (b & 1 == 1) {
-                    result = result.add(temp);
-                }
-                temp = temp.dbl();
-                b >>= 1;
+            inline for (0..8) |k| {
+                const bit: u1 = @truncate(byte >> (7 - k));
+                cSwap(&r0, &r1, bit);
+                r1 = r0.add(r1);
+                r0 = r0.dbl();
+                cSwap(&r0, &r1, bit);
             }
         }
-
-        try result.rejectIdentity();
-        return result;
+        return r0;
     }
 
-    /// Scalar multiplication with public scalar (variable time).
-    pub fn mulPublic(p: G2, scalar_bytes: [32]u8, endian: std.builtin.Endian) IdentityElementError!G2 {
-        return p.mul(scalar_bytes, endian);
+    /// Multiply a point by a public scalar, in variable time.
+    pub fn mulPublic(p: G2, scalar_bytes: [scalar.encoded_length]u8, endian: std.builtin.Endian) G2 {
+        var s = scalar_bytes;
+        if (endian == .little) std.mem.reverse(u8, &s);
+        const start = std.mem.findNone(u8, &s, &.{0}) orelse return identityElement;
+
+        var q = identityElement;
+        for (s[start..]) |byte| {
+            inline for (0..8) |k| {
+                q = q.dbl();
+                if ((byte >> (7 - k)) & 1 == 1) {
+                    q = q.add(p);
+                }
+            }
+        }
+        return q;
     }
 
-    /// Psi endomorphism, used by the subgroup check and by cofactor clearing.
+    /// The untwist-Frobenius-twist endomorphism, used for cofactor clearing.
     pub fn psi(p: G2) G2 {
-        const affine = p.affineCoordinates();
-
-        // Frobenius on Fp2 is conjugation.
-        const x_frobenius = affine.x.conjugate();
-        const y_frobenius = affine.y.conjugate();
-
-        const x_new = x_frobenius.mul(psi_coeff_x);
-        const y_new = y_frobenius.mul(psi_coeff_y);
-
-        return G2{ .x = x_new, .y = y_new, .z = Fp2.one };
+        return .{
+            .x = p.x.conjugate().mul(psi_coeff_x),
+            .y = p.y.conjugate().mul(psi_coeff_y),
+            .z = p.z.conjugate(),
+        };
     }
 
     /// Psi applied twice, which collapses to a scaling and a negation.
     pub fn psi2(p: G2) G2 {
-        const affine = p.affineCoordinates();
-        return G2{
-            .x = affine.x.mul(psi2_coeff_x),
-            .y = affine.y.neg(),
-            .z = Fp2.one,
+        return .{
+            .x = p.x.mul(psi2_coeff_x),
+            .y = p.y.neg(),
+            .z = p.z,
         };
     }
 
-    /// Clear the cofactor to ensure the point is in G2.
+    /// Multiply by the curve parameter t = -0xd201000000010000.
+    fn mulByT(p: G2) G2 {
+        // t is public, so the variable-time multiplication is fine.
+        return p.mulPublic(t_abs, .big).neg();
+    }
+
+    /// Clear the cofactor, mapping any point of E'(Fp2) into G2.
     ///
-    /// A chain of endomorphisms replaces the much more expensive
-    /// multiplication by the cofactor itself.
+    /// This is clear_cofactor_bls12381_g2 from RFC 9380, Appendix G.3.
     pub fn clearCofactor(p: G2) G2 {
-        const t = p.mulByX();
-        const t2 = p.psi();
-
-        var result = p.add(t);
-        result = result.add(t2.add(t.psi()).add(p.psi2()));
-
-        return result;
+        const t1 = p.mulByT();
+        var t2 = p.psi();
+        var t3 = p.dbl().psi2();
+        t3 = t3.sub(t2);
+        t2 = t1.add(t2).mulByT();
+        t3 = t3.add(t2);
+        t3 = t3.sub(t1);
+        return t3.sub(p);
     }
 
-    /// Multiply by x (the BLS parameter).
-    ///
-    /// The parameter is a compile-time constant, so the chain of doublings and
-    /// additions below is spelled out rather than driven by its bits.
-    fn mulByX(p: G2) G2 {
-        var result = p;
-
-        result = result.dbl();
-        result = result.add(p);
-        result = result.dbl();
-        result = result.add(p);
-        inline for (0..9) |_| {
-            result = result.dbl();
+    /// Return true if the point satisfies the curve equation.
+    fn isOnCurve(p: G2) bool {
+        if (p.z.isZero()) {
+            return p.x.isZero() and !p.y.isZero();
         }
-        result = result.add(p);
-        inline for (0..32) |_| {
-            result = result.dbl();
-        }
-        result = result.add(p);
-        inline for (0..16) |_| {
-            result = result.dbl();
-        }
-
-        // x is negative, so negate the result.
-        return result.neg();
+        // Y^2 Z = X^3 + b' Z^3
+        const lhs = p.y.sq().mul(p.z);
+        const rhs = p.x.sq().mul(p.x).add(B.mul(p.z.sq().mul(p.z)));
+        return lhs.equivalent(rhs);
     }
 
-    /// Check if the point is in the correct subgroup G2.
-    ///
-    /// Members of the subgroup are exactly the points the endomorphism
-    /// combination below sends to the identity.
+    /// Return true if the point is on the curve and in G2, that is if [r]Q = O.
     pub fn isInSubgroup(p: G2) bool {
-        const x_p = p.mulByX();
-        const psi_p = p.psi();
-        const psi2_x_p = x_p.psi2();
-
-        const result = x_p.add(p).add(psi_p).add(psi2_x_p);
-        return result.isIdentity();
+        if (!p.isOnCurve()) {
+            return false;
+        }
+        // r = t^4 - t^2 + 1, and multiplying by t is much cheaper than by r.
+        const t2 = p.mulByT().mulByT();
+        const t4 = t2.mulByT().mulByT();
+        return t4.sub(t2).add(p).isIdentity();
     }
 
     /// Return a random point in G2.
     pub fn random(io: std.Io) G2 {
         const s = scalar.random(io, .little);
-        return basePoint.mul(s, .little) catch unreachable;
+        return basePoint.mul(s, .little);
     }
 };
 
@@ -467,6 +488,13 @@ pub const AffineCoordinates = struct {
     pub fn neg(p: AffineCoordinates) AffineCoordinates {
         return .{ .x = p.x, .y = p.y.neg() };
     }
+};
+
+/// |t| as a scalar, where t = -0xd201000000010000 is the curve parameter.
+const t_abs: [scalar.encoded_length]u8 = blk: {
+    var bytes: [scalar.encoded_length]u8 = @splat(0);
+    std.mem.writeInt(u64, bytes[bytes.len - 8 ..], 0xd201000000010000, .big);
+    break :blk bytes;
 };
 
 // Psi endomorphism coefficients: 1/((1+u)^((p-1)/3)) and 1/((1+u)^((p-1)/2)).
@@ -522,87 +550,82 @@ const psi2_coeff_x = Fp2{
     .c1 = Fp.zero,
 };
 
-test "g2 generator is on curve" {
+/// Return a point of E'(Fp2) that is not in G2.
+fn pointOutsideSubgroup() G2 {
+    var x = Fp2.one;
+    while (true) : (x = x.add(Fp2.one)) {
+        const y = x.sq().mul(x).add(G2.B).sqrt() catch continue;
+        const p = G2{ .x = x, .y = y, .z = Fp2.one };
+        if (!p.isInSubgroup()) return p;
+    }
+}
+
+test "g2 group law" {
     const g = G2.basePoint;
-    const x3_b = g.x.sq().mul(g.x).add(G2.B);
-    const y2 = g.y.sq();
-    try std.testing.expect(x3_b.equivalent(y2));
-}
-
-test "g2 identity" {
-    try std.testing.expect(G2.identityElement.isIdentity());
-    try std.testing.expect(!G2.basePoint.isIdentity());
-}
-
-test "g2 addition" {
-    const g = G2.basePoint;
-
-    const result = g.add(G2.identityElement);
-    try std.testing.expect(result.equivalent(g));
-
-    const neg_g = g.neg();
-    const zero = g.add(neg_g);
-    try std.testing.expect(zero.isIdentity());
-}
-
-test "g2 doubling" {
-    const g = G2.basePoint;
-    const double_g = g.dbl();
-    const g_plus_g = g.add(g);
-    try std.testing.expect(double_g.equivalent(g_plus_g));
-}
-
-test "g2 serialization roundtrip" {
-    const g = G2.basePoint;
-
-    const compressed = g.toCompressed();
-    const decompressed = try G2.fromCompressed(compressed);
-    try std.testing.expect(g.equivalent(decompressed));
-
-    const uncompressed = g.toUncompressed();
-    const from_uncompressed = try G2.fromUncompressed(uncompressed);
-    try std.testing.expect(g.equivalent(from_uncompressed));
-}
-
-test "g2 identity encoding roundtrip" {
     const id = G2.identityElement;
+    try std.testing.expect(g.isInSubgroup());
+    try std.testing.expect(id.isInSubgroup());
+    try std.testing.expect(!g.isIdentity());
 
-    const compressed = id.toCompressed();
-    try std.testing.expectEqual(0xc0, compressed[0]);
-    try std.testing.expect((try G2.fromCompressed(compressed)).isIdentity());
+    try std.testing.expect(g.add(id).equivalent(g));
+    try std.testing.expect(id.add(g).equivalent(g));
+    try std.testing.expect(g.sub(g).isIdentity());
+    try std.testing.expect(g.dbl().equivalent(g.add(g)));
+    try std.testing.expect(id.dbl().isIdentity());
 
-    const uncompressed = id.toUncompressed();
-    try std.testing.expectEqual(0x40, uncompressed[0]);
-    try std.testing.expect((try G2.fromUncompressed(uncompressed)).isIdentity());
+    try std.testing.expect((try G2.fromAffineCoordinates(id.affineCoordinates())).isIdentity());
 }
 
-test "g2 rejects invalid metadata bits" {
-    // The sign bit must never be set on an uncompressed or point-at-infinity
-    // encoding, so 0x20, 0x60, and 0xe0 in the leading byte are all invalid.
+test "g2 scalar multiplication" {
+    const g = G2.basePoint;
+    const zero: scalar.CompressedScalar = @splat(0);
+    try std.testing.expect(g.mul(zero, .big).isIdentity());
 
-    // Compressed infinity with the sign bit set.
-    var bad_compressed_inf = G2.identityElement.toCompressed();
-    bad_compressed_inf[0] = 0xe0;
-    try std.testing.expectError(error.InvalidEncoding, G2.fromCompressed(bad_compressed_inf));
+    var one = zero;
+    one[one.len - 1] = 1;
+    const r_minus_one = scalar.neg(one);
+    try std.testing.expect(g.mul(r_minus_one, .big).equivalent(g.neg()));
+    try std.testing.expect(g.mulPublic(r_minus_one, .big).equivalent(g.neg()));
+}
 
-    // Uncompressed generator with the sign bit set.
+test "g2 rejects malformed encodings" {
+    // The sign bit is only allowed on compressed points other than the identity.
+    var bad_identity = G2.identityElement.toCompressed();
+    bad_identity[0] = 0xe0;
+    try std.testing.expectError(error.InvalidEncoding, G2.fromCompressed(bad_identity));
     var bad_uncompressed = G2.basePoint.toUncompressed();
     bad_uncompressed[0] |= 0x20;
     try std.testing.expectError(error.InvalidEncoding, G2.fromUncompressed(bad_uncompressed));
+    var bad_uncompressed_identity = G2.identityElement.toUncompressed();
+    bad_uncompressed_identity[0] = 0x60;
+    try std.testing.expectError(error.InvalidEncoding, G2.fromUncompressed(bad_uncompressed_identity));
 
-    // Uncompressed infinity with the sign bit set.
-    var bad_uncompressed_inf = G2.identityElement.toUncompressed();
-    bad_uncompressed_inf[0] = 0x60;
-    try std.testing.expectError(error.InvalidEncoding, G2.fromUncompressed(bad_uncompressed_inf));
+    // The identity must be all zeros after the flags.
+    var identity_with_payload = G2.identityElement.toCompressed();
+    identity_with_payload[95] = 1;
+    try std.testing.expectError(error.InvalidEncoding, G2.fromCompressed(identity_with_payload));
+
+    try std.testing.expectError(error.InvalidEncoding, G2.fromBytes(&.{}));
+}
+
+test "g2 points outside the subgroup" {
+    var off_curve = G2.basePoint;
+    off_curve.y = off_curve.y.add(off_curve.y);
+    try std.testing.expect(!off_curve.isInSubgroup());
+
+    const p = pointOutsideSubgroup();
+    try std.testing.expectError(error.InvalidEncoding, G2.fromCompressed(p.toCompressed()));
+    try std.testing.expectError(error.InvalidEncoding, G2.fromUncompressed(p.toUncompressed()));
+    try std.testing.expectError(error.InvalidEncoding, G2.fromAffineCoordinates(p.affineCoordinates()));
+
+    const cleared = p.clearCofactor();
+    try std.testing.expect(!cleared.isIdentity());
+    try std.testing.expect(cleared.isInSubgroup());
 }
 
 test "g2 random point" {
     const io = std.testing.io;
     const p = G2.random(io);
     try std.testing.expect(!p.isIdentity());
-
-    const affine = p.affineCoordinates();
-    const x3_b = affine.x.sq().mul(affine.x).add(G2.B);
-    const y2 = affine.y.sq();
-    try std.testing.expect(y2.equivalent(x3_b));
+    try std.testing.expect(p.isInSubgroup());
 }

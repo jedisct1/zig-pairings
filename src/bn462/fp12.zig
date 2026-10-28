@@ -540,6 +540,7 @@ test "fp12 inversion" {
     const inv_a = a.invert();
     const product = a.mul(inv_a);
     try std.testing.expect(product.equivalent(Fp12.one));
+    try std.testing.expect(Fp12.one.invert().equivalent(Fp12.one));
 }
 
 test "fp12 conjugate basic" {

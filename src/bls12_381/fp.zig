@@ -195,15 +195,14 @@ pub const Fp = struct {
             borrow = diff1[1] | diff2[1];
         }
 
-        // A borrow means the result went negative, so bring it back with a modulus add.
-        if (borrow == 1) {
-            var carry: u1 = 0;
-            inline for (0..limbs_count) |i| {
-                const sum1 = @addWithOverflow(result[i], modulus[i]);
-                const sum2 = @addWithOverflow(sum1[0], carry);
-                result[i] = sum2[0];
-                carry = sum1[1] | sum2[1];
-            }
+        // Add the modulus back if the subtraction borrowed, without branching.
+        const mask: u64 = 0 -% @as(u64, borrow);
+        var carry: u1 = 0;
+        inline for (0..limbs_count) |i| {
+            const sum1 = @addWithOverflow(result[i], modulus[i] & mask);
+            const sum2 = @addWithOverflow(sum1[0], carry);
+            result[i] = sum2[0];
+            carry = sum1[1] | sum2[1];
         }
 
         return .{ .limbs = result };
@@ -241,6 +240,7 @@ pub const Fp = struct {
     /// Montgomery reduction.
     fn montgomeryReduce(result: *[limbs_count]u64, t: *const [limbs_count * 2]u64) void {
         var wide: [limbs_count * 2]u64 = t.*;
+        var top_carry: u1 = 0;
 
         inline for (0..limbs_count) |i| {
             const k: u64 = wide[i] *% m0inv;
@@ -252,19 +252,18 @@ pub const Fp = struct {
                 carry = @truncate(product >> 64);
             }
 
-            var idx = i + limbs_count;
-            while (carry != 0 and idx < limbs_count * 2) : (idx += 1) {
-                const sum = @addWithOverflow(wide[idx], carry);
-                wide[idx] = sum[0];
-                carry = sum[1];
-            }
+            // Pass the carry on to the next row instead of rippling it, so the
+            // running time doesn't depend on the value.
+            const sum = @as(u128, wide[i + limbs_count]) + @as(u128, carry) + @as(u128, top_carry);
+            wide[i + limbs_count] = @truncate(sum);
+            top_carry = @intCast(sum >> 64);
         }
 
         inline for (0..limbs_count) |i| {
             result[i] = wide[i + limbs_count];
         }
 
-        result.* = subtractModulusIfNecessary(result.*, 0).limbs;
+        result.* = subtractModulusIfNecessary(result.*, top_carry).limbs;
     }
 
     /// Subtract modulus if result >= modulus.

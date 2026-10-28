@@ -1,20 +1,15 @@
-//! Conformance tests for BN462 against the IETF specification.
-//!
-//! The curve parameters, the base points, and the pairing of the generators
-//! are the values the IETF specification publishes for BN462.
+//! Known-answer tests for BN462, from revision 14 of the pairing-friendly
+//! curves draft.
 
 const std = @import("std");
 const bn462 = @import("bn462.zig");
-const Fp = bn462.Fp;
 const Fp2 = bn462.Fp2;
 const Fp12 = bn462.Fp12;
 const G1 = bn462.G1;
 const G2 = bn462.G2;
 const pairing = bn462.pairing;
 
-// G1 generator (base point BP)
-// x = 0x21a6d67ef250191fadba34a0a30160b9ac9264b6f95f63b3edbec3cf4b2e689d
-//     b1bbb4e69a416a0b1e79239c0372e5cd70113c98d91f36b6980d
+// Base points from Section 4.2.2.
 const g1_x_bytes = [_]u8{
     0x21, 0xa6, 0xd6, 0x7e, 0xf2, 0x50, 0x19, 0x1f, 0xad, 0xba, 0x34, 0xa0, 0xa3, 0x01, 0x60, 0xb9,
     0xac, 0x92, 0x64, 0xb6, 0xf9, 0x5f, 0x63, 0xb3, 0xed, 0xbe, 0xc3, 0xcf, 0x4b, 0x2e, 0x68, 0x9d,
@@ -22,8 +17,6 @@ const g1_x_bytes = [_]u8{
     0x70, 0x11, 0x3c, 0x98, 0xd9, 0x1f, 0x36, 0xb6, 0x98, 0x0d,
 };
 
-// y = 0x0118ea0460f7f7abb82b33676a7432a490eeda842cccfa7d788c659650426e6a
-//     f77df11b8ae40eb80f475432c66600622ecaa8a5734d36fb03de
 const g1_y_bytes = [_]u8{
     0x01, 0x18, 0xea, 0x04, 0x60, 0xf7, 0xf7, 0xab, 0xb8, 0x2b, 0x33, 0x67, 0x6a, 0x74, 0x32, 0xa4,
     0x90, 0xee, 0xda, 0x84, 0x2c, 0xcc, 0xfa, 0x7d, 0x78, 0x8c, 0x65, 0x96, 0x50, 0x42, 0x6e, 0x6a,
@@ -31,9 +24,6 @@ const g1_y_bytes = [_]u8{
     0x2e, 0xca, 0xa8, 0xa5, 0x73, 0x4d, 0x36, 0xfb, 0x03, 0xde,
 };
 
-// G2 generator (base point BP')
-// x'_0 = 0x0257ccc85b58dda0dfb38e3a8cbdc5482e0337e7c1cd96ed61c913820408208f
-//        9ad2699bad92e0032ae1f0aa6a8b48807695468e3d934ae1e4df
 const g2_x0_bytes = [_]u8{
     0x02, 0x57, 0xcc, 0xc8, 0x5b, 0x58, 0xdd, 0xa0, 0xdf, 0xb3, 0x8e, 0x3a, 0x8c, 0xbd, 0xc5, 0x48,
     0x2e, 0x03, 0x37, 0xe7, 0xc1, 0xcd, 0x96, 0xed, 0x61, 0xc9, 0x13, 0x82, 0x04, 0x08, 0x20, 0x8f,
@@ -41,8 +31,6 @@ const g2_x0_bytes = [_]u8{
     0x76, 0x95, 0x46, 0x8e, 0x3d, 0x93, 0x4a, 0xe1, 0xe4, 0xdf,
 };
 
-// x'_1 = 0x1d2e4343e8599102af8edca849566ba3c98e2a354730cbed9176884058b18134
-//        dd86bae555b783718f50af8b59bf7e850e9b73108ba6aa8cd283
 const g2_x1_bytes = [_]u8{
     0x1d, 0x2e, 0x43, 0x43, 0xe8, 0x59, 0x91, 0x02, 0xaf, 0x8e, 0xdc, 0xa8, 0x49, 0x56, 0x6b, 0xa3,
     0xc9, 0x8e, 0x2a, 0x35, 0x47, 0x30, 0xcb, 0xed, 0x91, 0x76, 0x88, 0x40, 0x58, 0xb1, 0x81, 0x34,
@@ -50,8 +38,6 @@ const g2_x1_bytes = [_]u8{
     0x0e, 0x9b, 0x73, 0x10, 0x8b, 0xa6, 0xaa, 0x8c, 0xd2, 0x83,
 };
 
-// y'_0 = 0x0a0650439da22c1979517427a20809eca035634706e23c3fa7a6bb42fe810f13
-//        99a1f41c9ddae32e03695a140e7b11d7c3376e5b68df0db7154e
 const g2_y0_bytes = [_]u8{
     0x0a, 0x06, 0x50, 0x43, 0x9d, 0xa2, 0x2c, 0x19, 0x79, 0x51, 0x74, 0x27, 0xa2, 0x08, 0x09, 0xec,
     0xa0, 0x35, 0x63, 0x47, 0x06, 0xe2, 0x3c, 0x3f, 0xa7, 0xa6, 0xbb, 0x42, 0xfe, 0x81, 0x0f, 0x13,
@@ -59,8 +45,6 @@ const g2_y0_bytes = [_]u8{
     0xc3, 0x37, 0x6e, 0x5b, 0x68, 0xdf, 0x0d, 0xb7, 0x15, 0x4e,
 };
 
-// y'_1 = 0x073ef0cbd438cbe0172c8ae37306324d44d5e6b0c69ac57b393f1ab370fd725c
-//        c647692444a04ef87387aa68d53743493b9eba14cc552ca2a93a
 const g2_y1_bytes = [_]u8{
     0x07, 0x3e, 0xf0, 0xcb, 0xd4, 0x38, 0xcb, 0xe0, 0x17, 0x2c, 0x8a, 0xe3, 0x73, 0x06, 0x32, 0x4d,
     0x44, 0xd5, 0xe6, 0xb0, 0xc6, 0x9a, 0xc5, 0x7b, 0x39, 0x3f, 0x1a, 0xb3, 0x70, 0xfd, 0x72, 0x5c,
@@ -68,21 +52,7 @@ const g2_y1_bytes = [_]u8{
     0x3b, 0x9e, 0xba, 0x14, 0xcc, 0x55, 0x2c, 0xa2, 0xa9, 0x3a,
 };
 
-test "base point encodings match IETF" {
-    const g1 = G1.basePoint.affineCoordinates();
-    try std.testing.expectEqualSlices(u8, &g1_x_bytes, &g1.x.toBytes(.big));
-    try std.testing.expectEqualSlices(u8, &g1_y_bytes, &g1.y.toBytes(.big));
-
-    const g2 = G2.basePoint.affineCoordinates();
-    try std.testing.expectEqualSlices(u8, &g2_x0_bytes, &g2.x.c0.toBytes(.big));
-    try std.testing.expectEqualSlices(u8, &g2_x1_bytes, &g2.x.c1.toBytes(.big));
-    try std.testing.expectEqualSlices(u8, &g2_y0_bytes, &g2.y.c0.toBytes(.big));
-    try std.testing.expectEqualSlices(u8, &g2_y1_bytes, &g2.y.c1.toBytes(.big));
-}
-
-// Expected components of e(P, Q), in tower order.
-// e_0 = 0x0cf7f0f2e01610804272f4a7a24014ac085543d787c8f8bf07059f93f87ba7e2
-//       a4ac77835d4ff10e78669be39cd23cc3a659c093dbe3b9647e8c
+// e(BP, BP') from Appendix C.
 const e_0_bytes = [_]u8{
     0x0c, 0xf7, 0xf0, 0xf2, 0xe0, 0x16, 0x10, 0x80, 0x42, 0x72, 0xf4, 0xa7, 0xa2, 0x40, 0x14, 0xac,
     0x08, 0x55, 0x43, 0xd7, 0x87, 0xc8, 0xf8, 0xbf, 0x07, 0x05, 0x9f, 0x93, 0xf8, 0x7b, 0xa7, 0xe2,
@@ -90,8 +60,6 @@ const e_0_bytes = [_]u8{
     0xa6, 0x59, 0xc0, 0x93, 0xdb, 0xe3, 0xb9, 0x64, 0x7e, 0x8c,
 };
 
-// e_1 = 0x00ef2c737515694ee5b85051e39970f24e27ca278847c7cfa709b0df408b830b
-//       3763b1b001f1194445b62d6c093fb6f77e43e369edefb1200389
 const e_1_bytes = [_]u8{
     0x00, 0xef, 0x2c, 0x73, 0x75, 0x15, 0x69, 0x4e, 0xe5, 0xb8, 0x50, 0x51, 0xe3, 0x99, 0x70, 0xf2,
     0x4e, 0x27, 0xca, 0x27, 0x88, 0x47, 0xc7, 0xcf, 0xa7, 0x09, 0xb0, 0xdf, 0x40, 0x8b, 0x83, 0x0b,
@@ -169,187 +137,21 @@ const e_11_bytes = [_]u8{
     0x7b, 0x45, 0xf4, 0xc2, 0xc5, 0x0c, 0x16, 0x48, 0x23, 0x22,
 };
 
-test "g1 generator matches IETF vector" {
-    const g1 = G1.basePoint;
-    const affine = g1.affineCoordinates();
-
-    const x_bytes = affine.x.toBytes(.big);
-    const y_bytes = affine.y.toBytes(.big);
-
-    try std.testing.expectEqualSlices(u8, &g1_x_bytes, &x_bytes);
-    try std.testing.expectEqualSlices(u8, &g1_y_bytes, &y_bytes);
-}
-
-test "g2 generator matches IETF vector" {
-    const g2 = G2.basePoint;
-    const affine = g2.affineCoordinates();
-
-    const x_c0_bytes = affine.x.c0.toBytes(.big);
-    const x_c1_bytes = affine.x.c1.toBytes(.big);
-    const y_c0_bytes = affine.y.c0.toBytes(.big);
-    const y_c1_bytes = affine.y.c1.toBytes(.big);
-
-    try std.testing.expectEqualSlices(u8, &g2_x0_bytes, &x_c0_bytes);
-    try std.testing.expectEqualSlices(u8, &g2_x1_bytes, &x_c1_bytes);
-    try std.testing.expectEqualSlices(u8, &g2_y0_bytes, &y_c0_bytes);
-    try std.testing.expectEqualSlices(u8, &g2_y1_bytes, &y_c1_bytes);
-}
-
-test "g1 generator is on curve" {
-    const g1 = G1.basePoint;
-    try std.testing.expect(g1.isInSubgroup());
-}
-
-test "g2 generator is on curve" {
-    const g2 = G2.basePoint;
-    try std.testing.expect(g2.isInSubgroup());
-}
-
-test "g1 doubling" {
-    const g1 = G1.basePoint;
-    const double_g1 = g1.dbl();
-    const g1_plus_g1 = g1.add(g1);
-
-    try std.testing.expect(double_g1.equivalent(g1_plus_g1));
-    try std.testing.expect(!double_g1.isIdentity());
-}
-
-test "g2 doubling" {
-    const g2 = G2.basePoint;
-    const double_g2 = g2.dbl();
-    const g2_plus_g2 = g2.add(g2);
-
-    try std.testing.expect(double_g2.equivalent(g2_plus_g2));
-    try std.testing.expect(!double_g2.isIdentity());
-}
-
-test "g1 negation" {
-    const g1 = G1.basePoint;
-    const neg_g1 = g1.neg();
-
-    const sum = g1.add(neg_g1);
-    try std.testing.expect(sum.isIdentity());
-}
-
-test "g2 negation" {
-    const g2 = G2.basePoint;
-    const neg_g2 = g2.neg();
-
-    const sum = g2.add(neg_g2);
-    try std.testing.expect(sum.isIdentity());
-}
-
-test "g1 serialization roundtrip" {
-    const g1 = G1.basePoint;
-
-    const compressed = g1.toCompressed();
-    const from_compressed = try G1.fromCompressed(compressed);
-    try std.testing.expect(g1.equivalent(from_compressed));
-
-    const uncompressed = g1.toUncompressed();
-    const from_uncompressed = try G1.fromUncompressed(uncompressed);
-    try std.testing.expect(g1.equivalent(from_uncompressed));
-}
-
-test "g2 serialization roundtrip" {
-    const g2 = G2.basePoint;
-
-    const compressed = g2.toCompressed();
-    const from_compressed = try G2.fromCompressed(compressed);
-    try std.testing.expect(g2.equivalent(from_compressed));
-
-    const uncompressed = g2.toUncompressed();
-    const from_uncompressed = try G2.fromUncompressed(uncompressed);
-    try std.testing.expect(g2.equivalent(from_uncompressed));
-}
-
-test "g1 identity serialization" {
-    const identity = G1.identityElement;
-
-    const compressed = identity.toCompressed();
-    try std.testing.expectEqual(0xC0, compressed[0]);
-
-    for (compressed[1..]) |b| {
-        try std.testing.expectEqual(0, b);
-    }
-
-    const from_compressed = try G1.fromCompressed(compressed);
-    try std.testing.expect(from_compressed.isIdentity());
-}
-
-test "g2 identity serialization" {
-    const identity = G2.identityElement;
-
-    const compressed = identity.toCompressed();
-    try std.testing.expectEqual(0xC0, compressed[0]);
-
-    const from_compressed = try G2.fromCompressed(compressed);
-    try std.testing.expect(from_compressed.isIdentity());
-}
-
-test "pairing with identity returns one" {
-    const g1 = G1.basePoint;
-    const g2 = G2.basePoint;
-
-    // e(O, Q) = 1.
-    const result1 = pairing.pair(G1.identityElement, g2);
-    try std.testing.expect(result1.isOne());
-
-    // e(P, O) = 1.
-    const result2 = pairing.pair(g1, G2.identityElement);
-    try std.testing.expect(result2.isOne());
-}
-
-test "pairing is non-degenerate" {
-    const g1 = G1.basePoint;
-    const g2 = G2.basePoint;
-
-    // e(G1, G2) != 1.
-    const result = pairing.pair(g1, g2);
-    try std.testing.expect(!result.isOne());
-}
-
 test "pairing matches IETF test vector" {
-    const g1 = G1.basePoint;
-    const g2 = G2.basePoint;
-
-    const result = pairing.pair(g1, g2);
-
-    const e0_actual = result.c0.c0.c0.toBytes(.big);
-    try std.testing.expectEqualSlices(u8, &e_0_bytes, &e0_actual);
-
-    const e1_actual = result.c0.c0.c1.toBytes(.big);
-    try std.testing.expectEqualSlices(u8, &e_1_bytes, &e1_actual);
-
-    const e2_actual = result.c0.c1.c0.toBytes(.big);
-    try std.testing.expectEqualSlices(u8, &e_2_bytes, &e2_actual);
-
-    const e3_actual = result.c0.c1.c1.toBytes(.big);
-    try std.testing.expectEqualSlices(u8, &e_3_bytes, &e3_actual);
-
-    const e4_actual = result.c0.c2.c0.toBytes(.big);
-    try std.testing.expectEqualSlices(u8, &e_4_bytes, &e4_actual);
-
-    const e5_actual = result.c0.c2.c1.toBytes(.big);
-    try std.testing.expectEqualSlices(u8, &e_5_bytes, &e5_actual);
-
-    const e6_actual = result.c1.c0.c0.toBytes(.big);
-    try std.testing.expectEqualSlices(u8, &e_6_bytes, &e6_actual);
-
-    const e7_actual = result.c1.c0.c1.toBytes(.big);
-    try std.testing.expectEqualSlices(u8, &e_7_bytes, &e7_actual);
-
-    const e8_actual = result.c1.c1.c0.toBytes(.big);
-    try std.testing.expectEqualSlices(u8, &e_8_bytes, &e8_actual);
-
-    const e9_actual = result.c1.c1.c1.toBytes(.big);
-    try std.testing.expectEqualSlices(u8, &e_9_bytes, &e9_actual);
-
-    const e10_actual = result.c1.c2.c0.toBytes(.big);
-    try std.testing.expectEqualSlices(u8, &e_10_bytes, &e10_actual);
-
-    const e11_actual = result.c1.c2.c1.toBytes(.big);
-    try std.testing.expectEqualSlices(u8, &e_11_bytes, &e11_actual);
+    const e = pairing.pair(G1.basePoint, G2.basePoint);
+    const expected = [_][58]u8{
+        e_0_bytes, e_1_bytes, e_2_bytes, e_3_bytes, e_4_bytes,  e_5_bytes,
+        e_6_bytes, e_7_bytes, e_8_bytes, e_9_bytes, e_10_bytes, e_11_bytes,
+    };
+    const actual = [_][58]u8{
+        e.c0.c0.c0.toBytes(.big), e.c0.c0.c1.toBytes(.big), e.c0.c1.c0.toBytes(.big),
+        e.c0.c1.c1.toBytes(.big), e.c0.c2.c0.toBytes(.big), e.c0.c2.c1.toBytes(.big),
+        e.c1.c0.c0.toBytes(.big), e.c1.c0.c1.toBytes(.big), e.c1.c1.c0.toBytes(.big),
+        e.c1.c1.c1.toBytes(.big), e.c1.c2.c0.toBytes(.big), e.c1.c2.c1.toBytes(.big),
+    };
+    for (expected, actual) |want, got| {
+        try std.testing.expectEqualSlices(u8, &want, &got);
+    }
 }
 
 test "mulBy034 embeds sparse element" {
@@ -364,99 +166,54 @@ test "mulBy034 embeds sparse element" {
     try std.testing.expect(result.c1.c1.equivalent(c4_test));
 }
 
-test "field arithmetic consistency" {
-    const a = Fp.fromInt(123456789);
-    const b = Fp.fromInt(987654321);
+test "Appendix D.3 scalar vectors" {
+    const scalar = bn462.scalar;
+    const zero: scalar.CompressedScalar = @splat(0);
+    var one = zero;
+    one[one.len - 1] = 1;
+    var r_minus_one: scalar.CompressedScalar = undefined;
+    _ = try std.fmt.hexToBytes(&r_minus_one, "240480360120023ffffffffff6ff0cf6b7d9bfca0000000000d812908ee1c201f7fffffffff6ff66fc7bf717f7c0000000002401b007e010800c");
+    var r: scalar.CompressedScalar = undefined;
+    _ = try std.fmt.hexToBytes(&r, "240480360120023ffffffffff6ff0cf6b7d9bfca0000000000d812908ee1c201f7fffffffff6ff66fc7bf717f7c0000000002401b007e010800d");
 
-    const sum = a.add(b);
-    const diff = sum.sub(b);
-    try std.testing.expect(diff.equivalent(a));
-
-    const c = Fp2.fromInts(12345, 67890);
-    const d = Fp2.fromInts(11111, 22222);
-
-    const sum2 = c.add(d);
-    const diff2 = sum2.sub(d);
-    try std.testing.expect(diff2.equivalent(c));
-
-    const prod = c.mul(d);
-    const quot = prod.mul(d.invert());
-    try std.testing.expect(quot.equivalent(c));
+    try std.testing.expect(scalar.isZero(try scalar.fromBytes(zero, .big)));
+    try std.testing.expectEqualSlices(u8, &one, &try scalar.fromBytes(one, .big));
+    try std.testing.expectEqualSlices(u8, &r_minus_one, &try scalar.fromBytes(r_minus_one, .big));
+    try std.testing.expectError(error.NonCanonical, scalar.fromBytes(r, .big));
+    try std.testing.expectEqualSlices(u8, &r, &scalar.modulus_bytes);
 }
 
-test "fp12 arithmetic" {
-    const one = Fp12.one;
-    const sq = one.sq();
-    try std.testing.expect(sq.equivalent(one));
+test "Appendix E.4 flag byte layout" {
+    // Lengths recorded for this library in Appendix E.2 of the specification.
+    try std.testing.expectEqual(59, G1.compressed_length);
+    try std.testing.expectEqual(117, G1.uncompressed_length);
+    try std.testing.expectEqual(117, G2.compressed_length);
+    try std.testing.expectEqual(233, G2.uncompressed_length);
 
-    const prod = one.mul(one);
-    try std.testing.expect(prod.equivalent(one));
+    // The coordinates follow the flag byte unchanged, with the coefficients
+    // of an Fp2 element in decreasing index order, as in Section 5.3.
+    const g1 = G1.basePoint.toUncompressed();
+    try std.testing.expectEqual(0x00, g1[0]);
+    try std.testing.expectEqualSlices(u8, &g1_x_bytes, g1[1..59]);
+    try std.testing.expectEqualSlices(u8, &g1_y_bytes, g1[59..117]);
 
-    const inv = one.invert();
-    try std.testing.expect(inv.equivalent(one));
-}
+    const g2 = G2.basePoint.toUncompressed();
+    try std.testing.expectEqual(0x00, g2[0]);
+    try std.testing.expectEqualSlices(u8, &g2_x1_bytes, g2[1..59]);
+    try std.testing.expectEqualSlices(u8, &g2_x0_bytes, g2[59..117]);
+    try std.testing.expectEqualSlices(u8, &g2_y1_bytes, g2[117..175]);
+    try std.testing.expectEqualSlices(u8, &g2_y0_bytes, g2[175..233]);
 
-test "pairing bilinearity - e(2P, Q) = e(P, Q)^2" {
-    const g1 = G1.basePoint;
-    const g2 = G2.basePoint;
+    // The compressed form sets C_bit, and S_bit carries sign_GF_p(y).
+    const c = G1.basePoint.toCompressed();
+    const y_sign: u8 = if (G1.basePoint.affineCoordinates().y.lexicographicallyLargest()) 0x20 else 0x00;
+    try std.testing.expectEqual(0x80 | y_sign, c[0]);
+    try std.testing.expectEqualSlices(u8, &g1_x_bytes, c[1..]);
 
-    const e1 = pairing.pair(g1, g2);
-
-    const two_g1 = g1.dbl();
-    const e2 = pairing.pair(two_g1, g2);
-
-    const e1_sq = e1.sq();
-
-    try std.testing.expect(e2.equivalent(e1_sq));
-}
-
-test "pairing bilinearity - e(P, 2Q) = e(P, Q)^2" {
-    const g1 = G1.basePoint;
-    const g2 = G2.basePoint;
-
-    const e1 = pairing.pair(g1, g2);
-
-    const two_g2 = g2.dbl();
-    const e2 = pairing.pair(g1, two_g2);
-
-    const e1_sq = e1.sq();
-
-    try std.testing.expect(e2.equivalent(e1_sq));
-}
-
-test "pairing bilinearity - e(P, Q) * e(P, Q) = e(2P, Q)" {
-    const g1 = G1.basePoint;
-    const g2 = G2.basePoint;
-
-    const e1 = pairing.pair(g1, g2);
-    const e1_times_e1 = e1.mul(e1);
-
-    const two_g1 = g1.dbl();
-    const e2 = pairing.pair(two_g1, g2);
-
-    try std.testing.expect(e2.equivalent(e1_times_e1));
-}
-
-test "pairing consistency - same input gives same output" {
-    const g1 = G1.basePoint;
-    const g2 = G2.basePoint;
-
-    const e1 = pairing.pair(g1, g2);
-    const e2 = pairing.pair(g1, g2);
-
-    try std.testing.expect(e1.equivalent(e2));
-}
-
-test "pairing with negation - e(P, Q) * e(-P, Q) = 1" {
-    const g1 = G1.basePoint;
-    const g2 = G2.basePoint;
-
-    const e1 = pairing.pair(g1, g2);
-
-    const neg_g1 = g1.neg();
-    const e2 = pairing.pair(neg_g1, g2);
-
-    const product = e1.mul(e2);
-
-    try std.testing.expect(product.isOne());
+    // An uncompressed G1 point and a compressed G2 point are both 117 bytes long.
+    const g2_compressed = G2.basePoint.toCompressed();
+    try std.testing.expectError(error.InvalidEncoding, G1.fromBytes(&g2_compressed));
+    try std.testing.expectError(error.InvalidEncoding, G1.fromUncompressed(g2_compressed));
+    try std.testing.expectError(error.InvalidEncoding, G2.fromBytes(&g1));
+    try std.testing.expectError(error.InvalidEncoding, G2.fromCompressed(g1));
 }

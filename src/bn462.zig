@@ -1,33 +1,29 @@
-//! BN462 pairing-friendly elliptic curve implementation.
+//! BN462, as defined in Section 4.2.2 of
+//! draft-irtf-cfrg-pairing-friendly-curves-14.
 //!
-//! BN462 is a Barreto-Naehrig curve with embedding degree 12, designed for
-//! approximately 134-bit security.
+//! Its security level is about 134 bits.
 //!
 //! It provides:
-//! - G1: A prime order subgroup of E(Fp) where y² = x³ + 5
-//! - G2: A prime order subgroup of E'(Fp²) where y² = x³ + (2 - u)
-//! - GT: The target group, a subgroup of Fp12*
-//! - Optimal Ate pairing: e: G1 × G2 → GT
+//! - G1: the curve E(Fp): y^2 = x^3 + 5, which has prime order r
+//! - G2: the subgroup of order r of the twist E'(Fp2): y^2 = x^3 + (2 - u)
+//! - GT: the target group, in Fp12
+//! - The optimal Ate pairing e: G1 x G2 -> GT
 //!
-//! Field tower construction:
-//! - Fp: Base field (462-bit prime)
-//! - Fp2 = Fp[u] / (u² + 1)
-//! - Fp6 = Fp2[v] / (v³ - (2 + u))
-//! - Fp12 = Fp6[w] / (w² - v)
+//! Field tower:
+//! - Fp2 = Fp[u] / (u^2 + 1)
+//! - Fp6 = Fp2[v] / (v^3 - (u + 2))
+//! - Fp12 = Fp6[w] / (w^2 - v)
 //!
-//! BN parameter: x = 2^114 + 2^101 - 2^14 - 1
+//! BN parameter: t = 2^114 + 2^101 - 2^14 - 1
 //!
-//! The IETF specification deliberately defines no point serialization format
-//! for BN462: a 462-bit characteristic needs 58 bytes, which leaves only two
-//! spare bits in the leading byte where the metadata scheme needs three.
+//! Scalars follow Section 5.2 of the draft, and the pairing matches the test
+//! vector of its Appendix C.
 //!
-//! The compressed and uncompressed encodings here are therefore specific to
-//! this library.
-//!
-//! Field element and scalar encodings do follow the specification.
+//! The draft doesn't define a point encoding for BN462.
+//! The one used here is described in the G1 module.
 //!
 //! References:
-//! - https://datatracker.ietf.org/doc/draft-irtf-cfrg-pairing-friendly-curves/
+//! - https://datatracker.ietf.org/doc/draft-irtf-cfrg-pairing-friendly-curves/14/
 //! - Barreto, P.S.L.M. and Naehrig, M. "Pairing-Friendly Elliptic Curves of Prime Order"
 
 pub const Fp = @import("bn462/fp.zig").Fp;
