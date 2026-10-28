@@ -62,7 +62,7 @@ pub fn pairingCheck(pairs: []const struct { p: G1, q: G2 }) bool {
 
 /// Accumulate the line functions along the Miller loop.
 ///
-/// The loop parameter is the BLS parameter t = -0xd201000000010000.
+/// The loop parameter is the BLS parameter chi = -0xd201000000010000.
 ///
 /// Because it is negative, the loop starts from -Q and subtracts at every set
 /// bit rather than adding.
@@ -70,7 +70,7 @@ fn millerLoop(p: G1Affine, q: G2Affine) Fp12 {
     var r = G2{ .x = q.x, .y = q.y.neg(), .z = Fp2.one };
     const q_neg = G2Affine{ .x = q.x, .y = q.y.neg() };
 
-    const t_abs: u64 = 0xd201000000010000;
+    const chi_abs: u64 = 0xd201000000010000;
 
     var f = Fp12.one;
 
@@ -78,7 +78,7 @@ fn millerLoop(p: G1Affine, q: G2Affine) Fp12 {
     var b: i8 = 62;
     while (b >= 0) : (b -= 1) {
         const bit_idx: u6 = @intCast(b);
-        const bit_set = ((t_abs >> bit_idx) & 1) == 1;
+        const bit_set = ((chi_abs >> bit_idx) & 1) == 1;
 
         f = f.sq();
 

@@ -126,6 +126,9 @@ pub const G2 = struct {
     ///
     /// The compression bit must match the length, so that an uncompressed G1
     /// point, which is also 117 bytes long, is not read as a G2 point.
+    ///
+    /// Protocols that hash or compare encoded points should use
+    /// `fromCompressed` or `fromUncompressed` instead.
     pub fn fromBytes(bytes: []const u8) (EncodingError || NotSquareError || NonCanonicalError)!G2 {
         if (bytes.len == 0) {
             return error.InvalidEncoding;
@@ -501,40 +504,6 @@ test "g2 scalar multiplication" {
     const r_minus_one = scalar.neg(one);
     try std.testing.expect(g.mul(r_minus_one, .big).equivalent(g.neg()));
     try std.testing.expect(g.mulPublic(r_minus_one, .big).equivalent(g.neg()));
-}
-
-test "g2 encoding round trip" {
-    const points = [_]G2{ G2.basePoint, G2.basePoint.neg(), G2.identityElement };
-    for (points) |p| {
-        try std.testing.expect(p.equivalent(try G2.fromCompressed(p.toCompressed())));
-        try std.testing.expect(p.equivalent(try G2.fromUncompressed(p.toUncompressed())));
-        try std.testing.expect(p.equivalent(try G2.fromBytes(&p.toCompressed())));
-        try std.testing.expect(p.equivalent(try G2.fromBytes(&p.toUncompressed())));
-    }
-    try std.testing.expectEqual(0xc0, G2.identityElement.toCompressed()[0]);
-    try std.testing.expectEqual(0x40, G2.identityElement.toUncompressed()[0]);
-}
-
-test "g2 rejects malformed encodings" {
-    // Same flag rules as BLS12-381, and the five low bits are reserved.
-    var bad_identity = G2.identityElement.toCompressed();
-    bad_identity[0] = 0xe0;
-    try std.testing.expectError(error.InvalidEncoding, G2.fromCompressed(bad_identity));
-    var bad_reserved = G2.basePoint.toCompressed();
-    bad_reserved[0] |= 0x01;
-    try std.testing.expectError(error.InvalidEncoding, G2.fromCompressed(bad_reserved));
-    var bad_uncompressed = G2.basePoint.toUncompressed();
-    bad_uncompressed[0] = 0x20;
-    try std.testing.expectError(error.InvalidEncoding, G2.fromUncompressed(bad_uncompressed));
-    var bad_uncompressed_identity = G2.identityElement.toUncompressed();
-    bad_uncompressed_identity[0] = 0x60;
-    try std.testing.expectError(error.InvalidEncoding, G2.fromUncompressed(bad_uncompressed_identity));
-
-    // A SEC1 type byte is not accepted.
-    bad_uncompressed[0] = 0x04;
-    try std.testing.expectError(error.InvalidEncoding, G2.fromUncompressed(bad_uncompressed));
-
-    try std.testing.expectError(error.InvalidEncoding, G2.fromBytes(&.{}));
 }
 
 test "g2 points outside the subgroup" {

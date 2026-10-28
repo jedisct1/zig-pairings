@@ -87,9 +87,9 @@ test "subgroup order matches IETF specification" {
     const expected: [32]u8 = parseHex(r_hex);
     try std.testing.expectEqualSlices(u8, &expected, &scalar.modulus_bytes);
 
-    // The subgroup checks rely on r = t^4 - t^2 + 1.
-    const t: u256 = 0xd201000000010000;
-    try std.testing.expectEqual(t * t * t * t - t * t + 1, std.mem.readInt(u256, &scalar.modulus_bytes, .big));
+    // The subgroup checks rely on r = chi^4 - chi^2 + 1.
+    const chi: u256 = 0xd201000000010000;
+    try std.testing.expectEqual(chi * chi * chi * chi - chi * chi + 1, std.mem.readInt(u256, &scalar.modulus_bytes, .big));
 }
 
 test "pairing e(BP, BP') matches the IETF test vector" {

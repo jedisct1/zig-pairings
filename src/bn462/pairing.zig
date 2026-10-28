@@ -2,7 +2,7 @@
 //!
 //! Computes the bilinear pairing e: G1 x G2 -> GT.
 //!
-//! For BN curves, the optimal ate pairing uses the loop parameter 6x + 2.
+//! For BN curves, the optimal ate pairing uses the loop parameter 6 * chi + 2.
 
 const std = @import("std");
 const Fp = @import("fp.zig").Fp;
@@ -16,11 +16,11 @@ const G2Affine = @import("g2.zig").AffineCoordinates;
 /// Element of the target group GT (a subgroup of Fp12*).
 pub const GT = Fp12;
 
-/// Ate loop parameter 6x + 2 = 0x1800bffffffffffffffffffffe7ffc, split into
-/// two 64-bit words.
+/// Ate loop parameter 6 * chi + 2 = 0x1800bffffffffffffffffffffe7ffc, split
+/// into two 64-bit words.
 ///
-/// The BN parameter x = 0x4001fffffffffffffffffffffbfff is positive, so the
-/// loop needs no final conjugation.
+/// chi = 0x4001fffffffffffffffffffffbfff is positive, so the loop needs no
+/// final conjugation.
 const ate_loop_count_lo: u64 = 0xfffffffffffe7ffc;
 const ate_loop_count_hi: u64 = 0x001800bfffffffff;
 

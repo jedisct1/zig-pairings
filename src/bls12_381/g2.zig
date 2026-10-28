@@ -113,6 +113,9 @@ pub const G2 = struct {
     ///
     /// The compression bit must match the length, so that an uncompressed G1
     /// point, which is also 96 bytes long, is not read as a G2 point.
+    ///
+    /// Protocols that hash or compare encoded points should use
+    /// `fromCompressed` or `fromUncompressed` instead.
     pub fn fromBytes(bytes: []const u8) (EncodingError || NotSquareError || NonCanonicalError)!G2 {
         if (bytes.len == 0) {
             return error.InvalidEncoding;
@@ -429,21 +432,21 @@ pub const G2 = struct {
         };
     }
 
-    /// Multiply by the curve parameter t = -0xd201000000010000.
-    fn mulByT(p: G2) G2 {
-        // t is public, so the variable-time multiplication is fine.
-        return p.mulPublic(t_abs, .big).neg();
+    /// Multiply by the curve parameter chi = -0xd201000000010000.
+    fn mulByChi(p: G2) G2 {
+        // chi is public, so the variable-time multiplication is fine.
+        return p.mulPublic(chi_abs, .big).neg();
     }
 
     /// Clear the cofactor, mapping any point of E'(Fp2) into G2.
     ///
     /// This is clear_cofactor_bls12381_g2 from RFC 9380, Appendix G.3.
     pub fn clearCofactor(p: G2) G2 {
-        const t1 = p.mulByT();
+        const t1 = p.mulByChi();
         var t2 = p.psi();
         var t3 = p.dbl().psi2();
         t3 = t3.sub(t2);
-        t2 = t1.add(t2).mulByT();
+        t2 = t1.add(t2).mulByChi();
         t3 = t3.add(t2);
         t3 = t3.sub(t1);
         return t3.sub(p);
@@ -465,10 +468,10 @@ pub const G2 = struct {
         if (!p.isOnCurve()) {
             return false;
         }
-        // r = t^4 - t^2 + 1, and multiplying by t is much cheaper than by r.
-        const t2 = p.mulByT().mulByT();
-        const t4 = t2.mulByT().mulByT();
-        return t4.sub(t2).add(p).isIdentity();
+        // Multiplying by chi is much cheaper than by r = chi^4 - chi^2 + 1.
+        const chi2 = p.mulByChi().mulByChi();
+        const chi4 = chi2.mulByChi().mulByChi();
+        return chi4.sub(chi2).add(p).isIdentity();
     }
 
     /// Return a random point in G2.
@@ -490,8 +493,8 @@ pub const AffineCoordinates = struct {
     }
 };
 
-/// |t| as a scalar, where t = -0xd201000000010000 is the curve parameter.
-const t_abs: [scalar.encoded_length]u8 = blk: {
+/// |chi| as a scalar, where chi = -0xd201000000010000 is the curve parameter.
+const chi_abs: [scalar.encoded_length]u8 = blk: {
     var bytes: [scalar.encoded_length]u8 = @splat(0);
     std.mem.writeInt(u64, bytes[bytes.len - 8 ..], 0xd201000000010000, .big);
     break :blk bytes;
@@ -586,26 +589,6 @@ test "g2 scalar multiplication" {
     const r_minus_one = scalar.neg(one);
     try std.testing.expect(g.mul(r_minus_one, .big).equivalent(g.neg()));
     try std.testing.expect(g.mulPublic(r_minus_one, .big).equivalent(g.neg()));
-}
-
-test "g2 rejects malformed encodings" {
-    // The sign bit is only allowed on compressed points other than the identity.
-    var bad_identity = G2.identityElement.toCompressed();
-    bad_identity[0] = 0xe0;
-    try std.testing.expectError(error.InvalidEncoding, G2.fromCompressed(bad_identity));
-    var bad_uncompressed = G2.basePoint.toUncompressed();
-    bad_uncompressed[0] |= 0x20;
-    try std.testing.expectError(error.InvalidEncoding, G2.fromUncompressed(bad_uncompressed));
-    var bad_uncompressed_identity = G2.identityElement.toUncompressed();
-    bad_uncompressed_identity[0] = 0x60;
-    try std.testing.expectError(error.InvalidEncoding, G2.fromUncompressed(bad_uncompressed_identity));
-
-    // The identity must be all zeros after the flags.
-    var identity_with_payload = G2.identityElement.toCompressed();
-    identity_with_payload[95] = 1;
-    try std.testing.expectError(error.InvalidEncoding, G2.fromCompressed(identity_with_payload));
-
-    try std.testing.expectError(error.InvalidEncoding, G2.fromBytes(&.{}));
 }
 
 test "g2 points outside the subgroup" {

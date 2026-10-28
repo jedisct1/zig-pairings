@@ -14,7 +14,7 @@
 //! - Fp6 = Fp2[v] / (v^3 - (u + 2))
 //! - Fp12 = Fp6[w] / (w^2 - v)
 //!
-//! BN parameter: t = 2^114 + 2^101 - 2^14 - 1
+//! BN parameter: chi = 2^114 + 2^101 - 2^14 - 1
 //!
 //! Scalars follow Section 5.2 of the draft, and the pairing matches the test
 //! vector of its Appendix C.

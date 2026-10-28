@@ -7,8 +7,8 @@
 //!
 //! Field elements are stored in Montgomery form using 8 x 64-bit limbs.
 //!
-//! BN462 is a Barreto-Naehrig curve with parameter x = 2^114 + 2^101 - 2^14 - 1,
-//! providing approximately 134-bit security.
+//! BN462 is a Barreto-Naehrig curve with parameter
+//! chi = 2^114 + 2^101 - 2^14 - 1, providing approximately 134-bit security.
 
 const std = @import("std");
 const crypto = std.crypto;

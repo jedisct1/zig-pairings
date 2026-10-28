@@ -29,6 +29,8 @@
 //! The draft leaves a few choices to the protocol using it:
 //! - `fromCompressed` and `fromUncompressed` accept one form each, and
 //!   `fromBytes` accepts both.
+//!   A point has a single encoding in each form, so a protocol that hashes
+//!   encoded points or compares them as bytes should stick to one form.
 //! - Decoding accepts the identity element, and `rejectIdentity` rejects it.
 //! - `scalar.fromBytes` accepts zero, and `scalar.isZero` detects it.
 //!
@@ -53,4 +55,5 @@ test {
     _ = bn462;
     _ = @import("interop_test.zig");
     _ = @import("bn462_interop_test.zig");
+    _ = @import("encoding_test.zig");
 }
